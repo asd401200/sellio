@@ -84,39 +84,126 @@ body {
   font-weight: 400;
 }
 
-.google-login-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 28px;
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius);
-  background: var(--white);
-  font-size: 15px;
+/* Auth form */
+.auth-form {
+  text-align: left;
+}
+
+.auth-form .field {
+  margin-bottom: 14px;
+}
+
+.auth-form .field label {
+  display: block;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--gray-800);
-  cursor: pointer;
-  transition: var(--transition);
-  font-family: var(--font);
+  color: var(--gray-700);
+  margin-bottom: 6px;
+}
+
+.auth-form .field input {
   width: 100%;
-  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: var(--font);
+  transition: var(--transition);
 }
 
-.google-login-btn:hover {
-  background: var(--gray-50);
-  border-color: var(--gray-300);
-  box-shadow: var(--shadow);
+.auth-form .field input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.1);
 }
 
-.login-terms {
-  margin-top: 24px;
-  font-size: 12px;
-  color: var(--gray-400);
-}
-
-.login-terms a {
+.auth-switch {
+  margin-top: 20px;
+  font-size: 13px;
   color: var(--gray-500);
+  text-align: center;
+}
+
+.auth-switch a {
+  color: var(--blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-switch a:hover {
   text-decoration: underline;
+}
+
+/* Register card */
+.register-card {
+  max-width: 560px !important;
+  padding: 40px 36px !important;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.reg-section {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.reg-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.reg-section h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-800);
+}
+
+.reg-row {
+  display: flex;
+  gap: 12px;
+}
+
+.reg-row .field {
+  flex: 1;
+}
+
+.req {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.email-same-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.email-same-row input[type="email"] {
+  flex: 1;
+}
+
+.same-check {
+  font-size: 12px;
+  color: var(--gray-500);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.file-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-screen {
+  flex-direction: column;
+  gap: 0;
 }
 
 /* ===== APP LAYOUT ===== */
@@ -1231,6 +1318,16 @@ body {
   font-weight: 600;
   color: var(--gray-800);
   margin-bottom: 12px;
+}
+
+/* ===== ADMIN SIDEBAR ===== */
+.sidebar-admin .sidebar-brand svg rect {
+  fill: var(--red);
+}
+
+.sidebar-admin .nav-item.active {
+  background: var(--red-light);
+  color: var(--red);
 }
 
 /* ===== STAT CARD WARNING (출고지연) ===== */

@@ -17,7 +17,7 @@ app.use(express.static('.'));
 app.use('/uploads', express.static('uploads'));
 
 // ===== 디렉토리/파일 초기화 =====
-['uploads', 'data'].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+['uploads', 'uploads/certs', 'data'].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 const FILES = {
   users: 'data/users.json',
   reviews: 'data/review_requests.json',
@@ -34,6 +34,9 @@ Object.values(FILES).forEach(f => {
 function readJSON(file, fb) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fb; } }
 function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2)); }
 
+// 비밀번호 해싱
+function hashPw(pw) { return crypto.createHash('sha256').update(pw + 'sellio_salt_2026').digest('hex'); }
+
 // ===== Multer =====
 const imgUpload = multer({
   storage: multer.diskStorage({
@@ -44,6 +47,17 @@ const imgUpload = multer({
   fileFilter: (r, f, cb) => {
     if (/jpeg|jpg|png|gif|webp/.test(path.extname(f.originalname).toLowerCase())) cb(null, true);
     else cb(new Error('지원하지 않는 이미지 형식'));
+  }
+});
+const certUpload = multer({
+  storage: multer.diskStorage({
+    destination: (r, f, cb) => cb(null, 'uploads/certs/'),
+    filename: (r, f, cb) => cb(null, `cert_${Date.now()}${path.extname(f.originalname)}`)
+  }),
+  limits: { fileSize: 1 * 1024 * 1024 },
+  fileFilter: (r, f, cb) => {
+    if (/jpeg|jpg|png|pdf/.test(path.extname(f.originalname).toLowerCase())) cb(null, true);
+    else cb(new Error('JPG, PNG, PDF만 가능'));
   }
 });
 const excelUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -68,44 +82,102 @@ function cpnHeaders(method, url, sk, ak, vendorId) {
 const cpnGet = (url, sk, ak, vid) => axios.get(`https://${CPN}${url}`, { headers: cpnHeaders('GET', url, sk, ak, vid), timeout: 15000 });
 const cpnPut = (url, body, sk, ak, vid) => axios.put(`https://${CPN}${url}`, body, { headers: cpnHeaders('PUT', url, sk, ak, vid), timeout: 15000 });
 
-// ========== 플랫폼 설정 ==========
-app.get('/api/config', (req, res) => {
+// ========== 회원가입 ==========
+app.post('/api/auth/register', certUpload.single('bizCert'), (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.loginId || !b.password) return res.status(400).json({ success: false, message: '아이디와 비밀번호를 입력하세요' });
+    if (b.loginId.length < 4) return res.status(400).json({ success: false, message: '아이디는 4자 이상' });
+    if (b.password.length < 8) return res.status(400).json({ success: false, message: '비밀번호는 8자 이상' });
+    if (b.password !== b.password2) return res.status(400).json({ success: false, message: '비밀번호 불일치' });
+
+    const users = readJSON(FILES.users, {});
+    // 아이디 중복 체크
+    if (Object.values(users).some(u => u.loginId === b.loginId)) {
+      return res.status(400).json({ success: false, message: '이미 사용중인 아이디입니다' });
+    }
+
+    const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    users[uid] = {
+      loginId: b.loginId,
+      passwordHash: hashPw(b.password),
+      role: 'seller', // seller or admin
+      bizNumber: b.bizNumber || '',
+      company: b.company || '',
+      bizType: b.bizType || '',
+      bizItem: b.bizItem || '',
+      ceo: b.ceo || '',
+      phone: b.phone || '',
+      mobile: b.mobile || '',
+      fax: b.fax || '',
+      homepage: b.homepage || '',
+      emailOrder: b.emailOrder || '',
+      emailStatement: b.emailStatement || '',
+      emailTax: b.emailTax || '',
+      zipcode: b.zipcode || '',
+      address: b.address || '',
+      addressDetail: b.addressDetail || '',
+      bizCert: req.file ? `/uploads/certs/${req.file.filename}` : null,
+      createdAt: new Date().toISOString(),
+    };
+    writeJSON(FILES.users, users);
+    console.log(`[회원가입] ${b.loginId} (${b.company})`);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// ========== 로그인 ==========
+app.post('/api/auth/login', (req, res) => {
+  const { loginId, password } = req.body;
+  if (!loginId || !password) return res.status(400).json({ success: false, message: '아이디와 비밀번호를 입력하세요' });
+
+  const users = readJSON(FILES.users, {});
+  const hash = hashPw(password);
+
+  // 관리자 계정 (하드코딩 또는 config)
   const cfg = readJSON(FILES.config, {});
-  // Firebase config만 노출 (비밀키 제외)
+  if (cfg.adminId && loginId === cfg.adminId && hash === hashPw(cfg.adminPw || '')) {
+    return res.json({ success: true, user: { uid: 'admin', loginId: cfg.adminId, role: 'admin', company: '관리자', name: '관리자' } });
+  }
+
+  const entry = Object.entries(users).find(([_, u]) => u.loginId === loginId && u.passwordHash === hash);
+  if (!entry) return res.status(401).json({ success: false, message: '아이디 또는 비밀번호가 올바르지 않습니다' });
+
+  const [uid, data] = entry;
+  data.lastLogin = new Date().toISOString();
+  writeJSON(FILES.users, users);
+
   res.json({
     success: true,
-    firebase: cfg.firebase || null,
-    adminEmail: cfg.adminEmail || '',
+    user: {
+      uid, loginId: data.loginId, role: data.role || 'seller',
+      company: data.company, ceo: data.ceo, name: data.company || data.ceo || data.loginId,
+      mobile: data.mobile, emailOrder: data.emailOrder,
+      bizNumber: data.bizNumber,
+    }
   });
 });
 
-app.post('/api/config/save', (req, res) => {
+// ========== 관리자 계정 설정 ==========
+app.post('/api/config/admin-setup', (req, res) => {
   const cfg = readJSON(FILES.config, {});
-  if (req.body.firebase) cfg.firebase = req.body.firebase;
-  if (req.body.adminEmail) cfg.adminEmail = req.body.adminEmail;
+  if (req.body.adminId) cfg.adminId = req.body.adminId;
+  if (req.body.adminPw) cfg.adminPw = req.body.adminPw;
   writeJSON(FILES.config, cfg);
   res.json({ success: true });
 });
 
-// ========== Google 토큰 검증 ==========
-app.post('/api/auth/google-verify', async (req, res) => {
-  const { credential } = req.body;
-  if (!credential) return res.status(400).json({ success: false, message: '토큰 없음' });
-  try {
-    const r = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
-    const d = r.data;
-    const user = { uid: d.sub, name: d.name || d.email.split('@')[0], email: d.email, photo: d.picture || null };
-    // 유저 정보 서버에 저장
-    const users = readJSON(FILES.users, {});
-    if (!users[user.uid]) users[user.uid] = {};
-    users[user.uid].profile = user;
-    users[user.uid].lastLogin = new Date().toISOString();
-    writeJSON(FILES.users, users);
-    res.json({ success: true, user });
-  } catch (e) {
-    console.error('[Google 토큰 검증 실패]', e.response?.data || e.message);
-    res.status(401).json({ success: false, message: '유효하지 않은 토큰' });
-  }
+// ========== 플랫폼 설정 ==========
+app.get('/api/config', (req, res) => {
+  const cfg = readJSON(FILES.config, {});
+  res.json({ success: true, adminEmail: cfg.adminEmail || '' });
+});
+
+app.post('/api/config/save', (req, res) => {
+  const cfg = readJSON(FILES.config, {});
+  if (req.body.adminEmail) cfg.adminEmail = req.body.adminEmail;
+  writeJSON(FILES.config, cfg);
+  res.json({ success: true });
 });
 
 // ========== 유저 관리 ==========
@@ -138,11 +210,16 @@ app.get('/api/admin/users', (req, res) => {
   const u = readJSON(FILES.users, {});
   const list = Object.entries(u).map(([uid, data]) => ({
     uid,
-    name: data.profile?.name || uid,
-    email: data.profile?.email || '',
+    loginId: data.loginId || uid,
+    company: data.company || '',
+    ceo: data.ceo || '',
+    mobile: data.mobile || '',
+    bizNumber: data.bizNumber || '',
+    emailOrder: data.emailOrder || '',
     vendorId: data.vendorId || '',
     hasApiKeys: !!(data.vendorId && data.accessKey),
-    lastLogin: data.lastLogin || data.updatedAt || '',
+    createdAt: data.createdAt || '',
+    lastLogin: data.lastLogin || '',
   }));
   res.json({ success: true, users: list, total: list.length });
 });
@@ -319,7 +396,6 @@ app.get('/api/review/export', (req, res) => {
   if (req.query.userId) list = list.filter(r => r.userId === req.query.userId);
   const pending = list.filter(r => r.status === '대기중');
 
-  // 카톡 양식 생성
   let text = '';
   pending.forEach((r, i) => {
     if (i > 0) text += '\n━━━━━━━━━━━━━━━\n\n';
@@ -395,6 +471,38 @@ app.post('/api/margin/calculate', (req, res) => {
   const profit = sale - totalCost;
   const marginRate = sale > 0 ? (profit / sale) * 100 : 0;
   res.json({ success: true, result: { salePrice: Math.round(sale), costPrice: Math.round(cost), shippingCost: Math.round(shipping), commission: Math.round(commission), commissionRate: parseFloat(commissionRate), reviewCost: Math.round(review), otherCost: Math.round(other), totalCost: Math.round(totalCost), profit: Math.round(profit), marginRate: Math.round(marginRate * 10) / 10, quantity: qty, totalRevenue: Math.round(sale * qty), totalCostAll: Math.round(totalCost * qty), totalProfit: Math.round(profit * qty) } });
+});
+
+// ========== 공급처 관리 ==========
+const SUPPLIERS_FILE = 'data/suppliers.json';
+if (!fs.existsSync(SUPPLIERS_FILE)) fs.writeFileSync(SUPPLIERS_FILE, '[]');
+
+app.get('/api/admin/suppliers', (req, res) => {
+  const list = readJSON(SUPPLIERS_FILE, []);
+  res.json({ success: true, suppliers: list, total: list.length });
+});
+
+app.post('/api/admin/supplier/save', (req, res) => {
+  let list = readJSON(SUPPLIERS_FILE, []);
+  if (!Array.isArray(list)) list = [];
+  const { id, name, contact, phone, email, account, note } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '공급처명 필요' });
+  if (id) {
+    const idx = list.findIndex(s => String(s.id) === String(id));
+    if (idx >= 0) { list[idx] = { ...list[idx], name, contact, phone, email, account, note, updatedAt: new Date().toISOString() }; }
+  } else {
+    list.push({ id: Date.now(), name, contact, phone, email, account, note, createdAt: new Date().toISOString() });
+  }
+  writeJSON(SUPPLIERS_FILE, list);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/supplier/delete', (req, res) => {
+  let list = readJSON(SUPPLIERS_FILE, []);
+  if (!Array.isArray(list)) list = [];
+  list = list.filter(s => String(s.id) !== String(req.body.id));
+  writeJSON(SUPPLIERS_FILE, list);
+  res.json({ success: true });
 });
 
 // ===== Start =====
