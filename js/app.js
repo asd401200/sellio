@@ -13,15 +13,15 @@ let currentUser = null;
 let products = [], orders = [], historyData = [];
 let reviewTags = new Set();
 let orderTypeFilter = 'all', historyFilter = 'all';
-let acceptOrders = []; // 결제완료 주문 (체험단 관리용)
-let matchedReviewOrders = []; // 엑셀 매칭 결과
+let acceptOrders = [];
+let matchedReviewOrders = [];
 let invoiceMatchData = [];
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   initLogin(); initNav(); initDashboard(); initOrders(); initReviewOrders();
   initProducts(); initInvoice(); initKakao(); initHistory(); initApiSettings();
-  initModal(); initImageUpload(); setDates();
+  initModal(); initImageUpload(); initMarginCalc(); setDates();
 });
 
 function setDates() {
@@ -66,12 +66,24 @@ async function onLogin() {
   document.getElementById('user-avatar-circle').textContent = currentUser.name[0].toUpperCase();
   if(currentUser.photo){const i=document.getElementById('user-avatar-img');i.src=currentUser.photo;i.classList.remove('hidden');document.getElementById('user-avatar-circle').classList.add('hidden');}
 
-  // 서버에서 API키 로드
   try {
     const r = await fetch(`${API}/user/load-keys`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.uid})});
     const d = await r.json();
-    if(d.keys){localStorage.setItem('sellio_api',JSON.stringify(d.keys));document.getElementById('api-vendor-id').value=d.keys.vendorId||'';document.getElementById('api-access-key').value=d.keys.accessKey||'';document.getElementById('api-secret-key').value=d.keys.secretKey||'';document.getElementById('user-sub').textContent=`셀러 #${d.keys.vendorId}`;}
-  } catch(e) { const l=getKeys(); if(l){document.getElementById('api-vendor-id').value=l.vendorId||'';document.getElementById('api-access-key').value=l.accessKey||'';document.getElementById('api-secret-key').value=l.secretKey||'';} }
+    if(d.keys){
+      localStorage.setItem('sellio_api',JSON.stringify(d.keys));
+      document.getElementById('api-vendor-id').value=d.keys.vendorId||'';
+      document.getElementById('api-access-key').value=d.keys.accessKey||'';
+      document.getElementById('api-secret-key').value=d.keys.secretKey||'';
+      document.getElementById('user-sub').textContent=`셀러 #${d.keys.vendorId}`;
+    }
+  } catch(e) {
+    const l=getKeys();
+    if(l){
+      document.getElementById('api-vendor-id').value=l.vendorId||'';
+      document.getElementById('api-access-key').value=l.accessKey||'';
+      document.getElementById('api-secret-key').value=l.secretKey||'';
+    }
+  }
 
   await loadTags(); await loadHistory();
   toast(`${currentUser.name}님 환영합니다!`);
@@ -92,22 +104,26 @@ function initDashboard() { renderDash(); }
 function renderDash() {
   const accept = orders.filter(o => o.status==='ACCEPT').length;
   const instruct = orders.filter(o => o.status==='INSTRUCT').length;
-  const reviewWait = [...reviewTags].length;
+  const reviewCount = reviewTags.size;
   const pending = historyData.filter(h => h.status==='대기중').length;
 
   document.getElementById('s-accept').innerHTML = `${accept}<small>건</small>`;
   document.getElementById('s-instruct').innerHTML = `${instruct}<small>건</small>`;
-  document.getElementById('s-review-wait').innerHTML = `${reviewWait}<small>건</small>`;
+  document.getElementById('s-review-wait').innerHTML = `${reviewCount}<small>건</small>`;
   document.getElementById('s-review-req').innerHTML = `${pending}<small>건</small>`;
 
   const bc = s => s==='대기중'?'orange':s==='완료'?'green':'blue';
-  document.getElementById('dash-recent').innerHTML = historyData.slice(0,5).map(h => `<tr><td>${h.productName||'-'}</td><td>${h.keyword||'-'}</td><td>${h.totalCount||0}건</td><td><span class="badge ${bc(h.status)}">${h.status}</span></td><td>${h.createdAt?new Date(h.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty"><p>신청 내역 없음</p></td></tr>';
+  document.getElementById('dash-recent').innerHTML = historyData.slice(0,5).map(h => `<tr><td>${esc(h.productName||'-')}</td><td>${esc(h.keyword||'-')}</td><td>${h.totalCount||0}건</td><td><span class="badge ${bc(h.status)}">${esc(h.status)}</span></td><td>${h.createdAt?new Date(h.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty"><p>신청 내역 없음</p></td></tr>';
 }
 
 // ===== ORDERS =====
 function initOrders() {
   document.getElementById('btn-fetch-orders').onclick = fetchOrders;
-  document.getElementById('order-type-chips').onclick = e => { const c=e.target.closest('.chip'); if(!c)return; document.querySelectorAll('#order-type-chips .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); orderTypeFilter=c.dataset.t; renderOrders(); };
+  document.getElementById('order-type-chips').onclick = e => {
+    const c=e.target.closest('.chip'); if(!c)return;
+    document.querySelectorAll('#order-type-chips .chip').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active'); orderTypeFilter=c.dataset.t; renderOrders();
+  };
   renderOrders();
 }
 
@@ -131,7 +147,7 @@ function renderOrders() {
 
   document.getElementById('orders-body').innerHTML = f.length ? f.map(o => {
     const isR = reviewTags.has(String(o.orderId));
-    return `<tr><td><span class="badge ${isR?'orange':'green'}" style="cursor:pointer;font-size:11px" data-tog="${o.orderId}">${isR?'체험단':'실주문'}</span></td><td><code style="font-size:12px">${o.orderId||'-'}</code></td><td style="max-width:220px">${o.productName||'-'}</td><td><span class="badge blue">${o.optionName||'-'}</span></td><td>${o.quantity}</td><td>${o.receiverName||'-'}</td><td>${o.orderDate?new Date(o.orderDate).toLocaleString('ko'):'-'}</td><td><span class="badge ${colors[o.status]||'gray'}">${labels[o.status]||o.status}</span></td></tr>`;
+    return `<tr><td><span class="badge ${isR?'orange':'green'}" style="cursor:pointer;font-size:11px" data-tog="${o.orderId}">${isR?'체험단':'실주문'}</span></td><td><code style="font-size:12px">${o.orderId||'-'}</code></td><td style="max-width:220px">${esc(o.productName||'-')}</td><td><span class="badge blue">${esc(o.optionName||'-')}</span></td><td>${o.quantity}</td><td>${esc(o.receiverName||'-')}</td><td>${o.orderDate?new Date(o.orderDate).toLocaleString('ko'):'-'}</td><td><span class="badge ${colors[o.status]||'gray'}">${labels[o.status]||o.status}</span></td></tr>`;
   }).join('') : '<tr><td colspan="8" class="empty"><p>주문 조회를 해주세요</p></td></tr>';
 
   document.querySelectorAll('[data-tog]').forEach(b => b.onclick = async () => {
@@ -141,19 +157,28 @@ function renderOrders() {
   });
 }
 
-// Tags
+// Tags - set-tags 방식 (전체 교체, 태그 해제도 정상 반영)
 async function loadTags() {
   if(!currentUser) return;
-  try { const r=await fetch(`${API}/review/get-tags`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.uid})}); const d=await r.json(); reviewTags=new Set((d.orderIds||[]).map(String)); } catch(e) { reviewTags=new Set(JSON.parse(localStorage.getItem('sellio_tags')||'[]')); }
+  try {
+    const r=await fetch(`${API}/review/get-tags`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.uid})});
+    const d=await r.json();
+    reviewTags=new Set((d.orderIds||[]).map(String));
+  } catch(e) {
+    reviewTags=new Set(JSON.parse(localStorage.getItem('sellio_tags')||'[]'));
+  }
 }
 async function saveTags() {
   const a=[...reviewTags]; localStorage.setItem('sellio_tags',JSON.stringify(a));
-  if(currentUser) try{await fetch(`${API}/review/tag-orders`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.uid,orderIds:a})});}catch(e){}
+  if(currentUser) {
+    try {
+      await fetch(`${API}/review/set-tags`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:currentUser.uid,orderIds:a})});
+    } catch(e) { console.error('태그 저장 실패:', e); }
+  }
 }
 
 // ===== 체험단 주문 관리 (핵심 기능) =====
 function initReviewOrders() {
-  // Step 1: 결제완료 불러오기
   document.getElementById('btn-load-accept').onclick = async () => {
     const k=needKeys(); if(!k)return;
     const btn=document.getElementById('btn-load-accept'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> 불러오는 중...';
@@ -165,17 +190,16 @@ function initReviewOrders() {
       if(d.success) {
         acceptOrders = d.orders;
         document.getElementById('accept-info').innerHTML = `<div class="accept-count-bar"><span>결제완료 주문: <strong>${acceptOrders.length}건</strong></span><span class="badge blue">최근 2주</span></div>
-        <table class="tbl"><thead><tr><th>주문번호</th><th>상품명</th><th>수령인</th><th>주문일</th></tr></thead><tbody>${acceptOrders.slice(0,10).map(o=>`<tr><td><code>${o.orderId}</code></td><td>${o.productName}</td><td>${o.receiverName}</td><td>${new Date(o.orderDate).toLocaleDateString('ko')}</td></tr>`).join('')}${acceptOrders.length>10?`<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">...외 ${acceptOrders.length-10}건</td></tr>`:''}</tbody></table>`;
+        <table class="tbl"><thead><tr><th>주문번호</th><th>상품명</th><th>수령인</th><th>주문일</th></tr></thead><tbody>${acceptOrders.slice(0,10).map(o=>`<tr><td><code>${o.orderId}</code></td><td>${esc(o.productName)}</td><td>${esc(o.receiverName)}</td><td>${new Date(o.orderDate).toLocaleDateString('ko')}</td></tr>`).join('')}${acceptOrders.length>10?`<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">...외 ${acceptOrders.length-10}건</td></tr>`:''}</tbody></table>`;
         toast(`결제완료 ${acceptOrders.length}건 불러옴`);
-      } else toast(d.message);
+      } else toast(d.message||'주문 조회 실패');
     } catch(e){toast('서버 연결 실패');}
     btn.disabled=false; btn.textContent='결제완료 주문 불러오기';
   };
 
-  // Step 2: 엑셀 업로드
   document.getElementById('review-excel-file').onchange = async (e) => {
     const file = e.target.files[0]; if(!file) return;
-    if(acceptOrders.length===0) { toast('먼저 1단계에서 결제완료 주문을 불러와주세요'); return; }
+    if(acceptOrders.length===0) { toast('먼저 1단계에서 결제완료 주문을 불러와주세요'); e.target.value=''; return; }
 
     const fd = new FormData(); fd.append('file', file);
     try {
@@ -183,20 +207,23 @@ function initReviewOrders() {
       const r = await fetch(`${API}/invoice/parse-excel`,{method:'POST',body:fd});
       const d = await r.json();
       if(d.success && d.data.length>0) {
-        // 매칭
         matchedReviewOrders = d.data.map(row => {
           let m = null;
+          // 1순위: 주문번호 매칭
           if(row.orderId) m = acceptOrders.find(o => String(o.orderId)===String(row.orderId));
+          // 2순위: 수령인+상품명 매칭 (동명이인 방지)
+          if(!m && row.receiverName && row.productName) m = acceptOrders.find(o => o.receiverName===row.receiverName && o.productName.includes(row.productName));
+          // 3순위: 수령인만 매칭
           if(!m && row.receiverName) m = acceptOrders.find(o => o.receiverName===row.receiverName);
           return { ...row, order: m, matched: !!m };
         });
         renderMatchResult();
         toast(`${d.data.length}건 중 ${matchedReviewOrders.filter(r=>r.matched).length}건 매칭`);
-      } else toast('데이터 없음');
+      } else toast(d.message || '데이터 없음');
     } catch(e){toast('파싱 실패');}
+    e.target.value='';
   };
 
-  // Step 3: 이동
   document.getElementById('btn-move-to-instruct').onclick = moveToInstruct;
   document.getElementById('match-check-all').onchange = (e) => {
     document.querySelectorAll('.match-row-cb').forEach(cb => cb.checked = e.target.checked);
@@ -213,9 +240,9 @@ function renderMatchResult() {
   document.getElementById('match-body').innerHTML = matchedReviewOrders.map((r,i) => `<tr>
     <td>${r.matched?`<input type="checkbox" class="match-row-cb" data-i="${i}" checked>`:'-'}</td>
     <td><code style="font-size:12px">${r.order?.orderId||r.orderId||'-'}</code></td>
-    <td>${r.order?.productName||r.productName||'-'}</td>
-    <td>${r.order?.optionName||r.option||'-'}</td>
-    <td>${r.order?.receiverName||r.receiverName||'-'}</td>
+    <td>${esc(r.order?.productName||r.productName||'-')}</td>
+    <td>${esc(r.order?.optionName||r.option||'-')}</td>
+    <td>${esc(r.order?.receiverName||r.receiverName||'-')}</td>
     <td>${r.order?.orderDate?new Date(r.order.orderDate).toLocaleDateString('ko'):'-'}</td>
     <td><span class="badge ${r.matched?'green':'red'}">${r.matched?'매칭':'미매칭'}</span></td>
   </tr>`).join('');
@@ -224,7 +251,7 @@ function renderMatchResult() {
 async function moveToInstruct() {
   const k=needKeys(); if(!k)return;
   const checked = [...document.querySelectorAll('.match-row-cb:checked')].map(cb => parseInt(cb.dataset.i));
-  const toMove = checked.map(i => matchedReviewOrders[i]).filter(r => r.matched && r.order);
+  const toMove = checked.map(i => matchedReviewOrders[i]).filter(r => r && r.matched && r.order);
   if(toMove.length===0){toast('이동할 주문이 없습니다');return;}
 
   const btn=document.getElementById('btn-move-to-instruct');
@@ -235,7 +262,6 @@ async function moveToInstruct() {
     const r = await fetch(`${API}/coupang/approve-orders`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...k,shipmentBoxIds:boxIds})});
     const d = await r.json();
     if(d.success) {
-      // 이동된 주문을 체험단으로 태그
       const okIds = d.results.filter(x=>x.success).map(x => {
         const m = toMove.find(t => String(t.order.shipmentBoxId)===String(x.shipmentBoxId));
         return m ? String(m.order.orderId) : null;
@@ -244,7 +270,7 @@ async function moveToInstruct() {
       await saveTags();
       toast(`${d.summary.success}건 상품준비중으로 이동 (실패 ${d.summary.fail}건)`);
       renderDash();
-    } else toast('이동 실패');
+    } else toast(d.message || '이동 실패');
   } catch(e){toast('서버 연결 실패');}
   btn.disabled=false; btn.textContent='체험단 건 → 상품준비중 이동';
 }
@@ -268,7 +294,7 @@ function initProducts() {
 function renderProducts() {
   const q = document.getElementById('product-search').value.toLowerCase();
   const f = products.filter(p => !q || p.name.toLowerCase().includes(q) || (p.option||'').toLowerCase().includes(q));
-  document.getElementById('product-body').innerHTML = f.length ? f.map((p,i) => `<tr><td style="max-width:300px">${p.name}</td><td><code style="font-size:12px">${p.optionId||p.vendorItemId||'-'}</code></td><td><span class="badge blue">${p.option||'-'}</span></td><td>${p.salePrice?p.salePrice.toLocaleString()+'원':'-'}</td><td><button class="btn-primary" style="padding:6px 14px;font-size:12px" data-ri="${i}">체험단 신청</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty"><p>상품 가져오기를 눌러주세요</p></td></tr>';
+  document.getElementById('product-body').innerHTML = f.length ? f.map((p,i) => `<tr><td style="max-width:300px">${esc(p.name)}</td><td><code style="font-size:12px">${p.optionId||p.vendorItemId||'-'}</code></td><td><span class="badge blue">${esc(p.option||'-')}</span></td><td>${p.salePrice?p.salePrice.toLocaleString()+'원':'-'}</td><td><button class="btn-primary" style="padding:6px 14px;font-size:12px" data-ri="${i}">체험단 신청</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty"><p>상품 가져오기를 눌러주세요</p></td></tr>';
   document.querySelectorAll('[data-ri]').forEach(b => b.onclick = () => openModal(f[parseInt(b.dataset.ri)]));
 }
 
@@ -279,7 +305,6 @@ function initInvoice() {
     document.getElementById('inv-file-name').textContent = file.name;
     const k=needKeys(); if(!k)return;
 
-    // 상품준비중 주문 가져오기 (송장 등록 대상)
     toast('주문 조회 + 엑셀 파싱 중...');
     let instructOrders = [];
     try {
@@ -288,7 +313,7 @@ function initInvoice() {
       const r=await fetch(`${API}/coupang/orders`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...k,status:'INSTRUCT',createdAtFrom:from,createdAtTo:to})});
       const d=await r.json();
       if(d.success) instructOrders=d.orders;
-    } catch(e){}
+    } catch(e){ console.error('주문 조회 실패:', e); }
 
     const fd=new FormData(); fd.append('file',file);
     try {
@@ -298,18 +323,20 @@ function initInvoice() {
         invoiceMatchData = d.data.map(row => {
           let m=null;
           if(row.orderId) m=instructOrders.find(o=>String(o.orderId)===String(row.orderId));
+          if(!m && row.receiverName && row.productName) m=instructOrders.find(o=>o.receiverName===row.receiverName && o.productName.includes(row.productName));
           if(!m && row.receiverName) m=instructOrders.find(o=>o.receiverName===row.receiverName);
           return {...row,order:m,matched:!!m};
         });
         renderInvoiceResult();
         toast(`${invoiceMatchData.filter(r=>r.matched).length}/${invoiceMatchData.length}건 매칭`);
-      }
+      } else toast(d.message || '파싱 실패');
     } catch(e){toast('파싱 실패');}
+    e.target.value='';
   };
 
   document.getElementById('btn-apply-invoice').onclick = async () => {
     const k=needKeys(); if(!k)return;
-    const matched = invoiceMatchData.filter(r=>r.matched&&r.order);
+    const matched = invoiceMatchData.filter(r=>r.matched&&r.order&&r.invoiceNumber);
     if(!matched.length){toast('매칭된 송장 없음');return;}
     const courier = document.getElementById('courier-sel').value;
     const btn=document.getElementById('btn-apply-invoice');
@@ -319,6 +346,7 @@ function initInvoice() {
       const r=await fetch(`${API}/coupang/invoice-batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...k,invoices:matched.map(m=>({shipmentBoxId:m.order.shipmentBoxId,invoiceNumber:m.invoiceNumber,deliveryCompanyCode:courier}))})});
       const d=await r.json();
       if(d.success) toast(`송장 등록 완료! 성공 ${d.summary.success} / 실패 ${d.summary.fail}`);
+      else toast(d.message || '등록 실패');
     } catch(e){toast('서버 연결 실패');}
     btn.disabled=false; btn.textContent='쿠팡에 송장 일괄 등록';
   };
@@ -329,14 +357,18 @@ function renderInvoiceResult() {
   document.getElementById('inv-result').classList.remove('hidden');
   const m=invoiceMatchData.filter(r=>r.matched).length;
   document.getElementById('inv-summary').innerHTML=`<div class="invoice-summary-bar"><span>총 <strong>${invoiceMatchData.length}</strong>건 | 매칭 <strong class="text-green">${m}</strong> | 미매칭 <strong class="text-red">${invoiceMatchData.length-m}</strong></span></div>`;
-  document.getElementById('inv-body').innerHTML = invoiceMatchData.map(r=>`<tr><td><code style="font-size:12px">${r.order?.orderId||r.orderId||'-'}</code></td><td>${r.order?.productName||r.productName||'-'}</td><td>${r.order?.receiverName||r.receiverName||'-'}</td><td><code>${r.invoiceNumber}</code></td><td><span class="badge ${r.matched?'green':'red'}">${r.matched?'매칭':'미매칭'}</span></td></tr>`).join('');
+  document.getElementById('inv-body').innerHTML = invoiceMatchData.map(r=>`<tr><td><code style="font-size:12px">${r.order?.orderId||r.orderId||'-'}</code></td><td>${esc(r.order?.productName||r.productName||'-')}</td><td>${esc(r.order?.receiverName||r.receiverName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.matched?'green':'red'}">${r.matched?'매칭':'미매칭'}</span></td></tr>`).join('');
 }
 
 // ===== KAKAO EXPORT =====
 let exportText='', exportReqs=[];
 function initKakao() {
   document.getElementById('btn-load-export').onclick = async () => {
-    try { const r=await(await fetch(`${API}/review/export`)).json(); if(r.success){exportText=r.text;exportReqs=r.requests;document.getElementById('kakao-preview').innerHTML=exportReqs.length?`<pre class="kakao-text">${esc(exportText)}</pre>`:'<p class="empty-text">대기중 신청 없음</p>';toast(`${r.count}건`);}} catch(e){toast('서버 연결 실패');}
+    try {
+      const url = currentUser ? `${API}/review/export?userId=${currentUser.uid}` : `${API}/review/export`;
+      const r=await(await fetch(url)).json();
+      if(r.success){exportText=r.text;exportReqs=r.requests;document.getElementById('kakao-preview').innerHTML=exportReqs.length?`<pre class="kakao-text">${esc(exportText)}</pre>`:'<p class="empty-text">대기중 신청 없음</p>';toast(`${r.count}건`);}
+    } catch(e){toast('서버 연결 실패');}
   };
   document.getElementById('btn-copy-kakao').onclick = () => {
     if(!exportText){toast('먼저 불러오기');return;}
@@ -356,13 +388,13 @@ function initHistory() {
   document.getElementById('history-chips').onclick = e => { const c=e.target.closest('.chip'); if(!c)return; document.querySelectorAll('#history-chips .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); historyFilter=c.dataset.s; renderHistory(); };
 }
 async function loadHistory() {
-  try { const url=currentUser?`${API}/review/list?userId=${currentUser.uid}`:`${API}/review/list`; const d=await(await fetch(url)).json(); if(d.success) historyData=d.requests; } catch(e){ historyData=JSON.parse(localStorage.getItem('sellio_hist')||'[]'); }
+  try { const url=currentUser?`${API}/review/list?userId=${currentUser.uid}`:`${API}/review/list`; const d=await(await fetch(url)).json(); if(d.success) historyData=d.requests; } catch(e){ historyData=[]; }
   renderHistory(); renderDash();
 }
 function renderHistory() {
   const f = historyFilter==='all' ? historyData : historyData.filter(h=>h.status===historyFilter);
   const bc = s=>s==='대기중'?'orange':s==='완료'?'green':'blue';
-  document.getElementById('history-body').innerHTML = f.length ? f.map(h=>`<tr><td>${h.productName||'-'}</td><td>${h.keyword||'-'}</td><td>${h.totalCount||0}건</td><td><span class="badge ${bc(h.status)}">${h.status}</span></td><td>${h.createdAt?new Date(h.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty"><p>없음</p></td></tr>';
+  document.getElementById('history-body').innerHTML = f.length ? f.map(h=>`<tr><td>${esc(h.productName||'-')}</td><td>${esc(h.keyword||'-')}</td><td>${h.totalCount||0}건</td><td><span class="badge ${bc(h.status)}">${esc(h.status)}</span></td><td>${h.createdAt?new Date(h.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty"><p>없음</p></td></tr>';
 }
 
 // ===== API SETTINGS =====
@@ -405,16 +437,20 @@ function openModal(p) {
   document.getElementById('modal-product-url').value = p.sellerProductId?`https://www.coupang.com/vp/products/${p.sellerProductId}`:'';
   ['modal-keyword','modal-total','modal-daily','modal-guide'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('modal-time').value='상관없음';
+  // 이미지 초기화
   document.getElementById('modal-image').value='';
   document.getElementById('preview-img').src='';
   document.getElementById('img-preview').classList.add('hidden');
   document.getElementById('img-placeholder').classList.remove('hidden');
+  // 토글 초기화
+  ['modal-photo','modal-payment','modal-delivery','modal-weekend'].forEach(id=>document.getElementById(id).checked=true);
   document.getElementById('review-modal').classList.remove('hidden');
 }
 
 async function submitReview() {
   const kw=document.getElementById('modal-keyword').value.trim(),tc=document.getElementById('modal-total').value,dc=document.getElementById('modal-daily').value;
-  if(!kw||!tc||!dc){toast('필수 항목 입력');return;}
+  if(!kw||!tc||!dc){toast('필수 항목 입력 (키워드, 총건수, 일건수)');return;}
+  if(parseInt(dc) > parseInt(tc)){toast('일 진행 건수가 총 건수보다 클 수 없습니다');return;}
   const btn=document.getElementById('btn-modal-submit'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
 
   const fd=new FormData();
@@ -446,6 +482,68 @@ function initImageUpload() {
   rm.onclick = e => { e.stopPropagation(); inp.value=''; pi.src=''; pv.classList.add('hidden'); ph.classList.remove('hidden'); };
 }
 
+// ===== MARGIN CALCULATOR =====
+function initMarginCalc() {
+  const $ = id => document.getElementById(id);
+  const fields = ['mc-sale','mc-cost','mc-shipping','mc-commission','mc-review','mc-other','mc-qty'];
+  fields.forEach(id => {
+    const el = $(id);
+    if(el) el.oninput = calcMargin;
+  });
+  calcMargin();
+}
+
+function calcMargin() {
+  const $ = id => document.getElementById(id);
+  const val = id => parseFloat($(id)?.value) || 0;
+
+  const sale = val('mc-sale');
+  const cost = val('mc-cost');
+  const shipping = val('mc-shipping');
+  const commRate = val('mc-commission') || 10.8;
+  const reviewCost = val('mc-review');
+  const other = val('mc-other');
+  const qty = parseInt($('mc-qty')?.value) || 1;
+
+  const commission = Math.round(sale * commRate / 100);
+  const totalCost = cost + shipping + commission + reviewCost + other;
+  const profit = sale - totalCost;
+  const marginRate = sale > 0 ? (profit / sale * 100) : 0;
+
+  $('mc-r-sale').textContent = sale.toLocaleString() + '원';
+  $('mc-r-cost').textContent = cost.toLocaleString() + '원';
+  $('mc-r-shipping').textContent = shipping.toLocaleString() + '원';
+  $('mc-r-commission').textContent = commission.toLocaleString() + '원 (' + commRate + '%)';
+  $('mc-r-review').textContent = reviewCost.toLocaleString() + '원';
+  $('mc-r-other').textContent = other.toLocaleString() + '원';
+  $('mc-r-totalcost').textContent = totalCost.toLocaleString() + '원';
+
+  const profitEl = $('mc-r-profit');
+  const rateEl = $('mc-r-rate');
+  profitEl.textContent = profit.toLocaleString() + '원';
+  rateEl.textContent = marginRate.toFixed(1) + '%';
+
+  profitEl.className = 'mc-value ' + (profit > 0 ? 'positive' : profit < 0 ? 'negative' : '');
+  rateEl.className = 'mc-value ' + (marginRate > 0 ? 'positive' : marginRate < 0 ? 'negative' : '');
+
+  // 수량별
+  $('mc-r-qty').textContent = qty + '개';
+  $('mc-r-total-revenue').textContent = (sale * qty).toLocaleString() + '원';
+  $('mc-r-total-cost').textContent = (totalCost * qty).toLocaleString() + '원';
+  const totalProfit = profit * qty;
+  const tpEl = $('mc-r-total-profit');
+  tpEl.textContent = totalProfit.toLocaleString() + '원';
+  tpEl.className = 'mc-value ' + (totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : '');
+
+  // 마진 바
+  const bar = $('mc-bar-fill');
+  if(bar) {
+    const w = Math.max(0, Math.min(100, marginRate));
+    bar.style.width = w + '%';
+    bar.className = 'mc-bar-fill ' + (marginRate >= 20 ? 'high' : marginRate >= 10 ? 'mid' : 'low');
+  }
+}
+
 // ===== UTILS =====
 function toast(m){const e=document.getElementById('toast');document.getElementById('toast-msg').textContent=m;e.classList.remove('hidden');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.add('hidden'),3000);}
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}

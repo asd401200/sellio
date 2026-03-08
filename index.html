@@ -51,6 +51,11 @@
       </div>
 
       <div class="nav-section">
+        <div class="nav-label">도구</div>
+        <a href="#" class="nav-item" data-page="margin-calc"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="12" y1="10" x2="14" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="12" y1="14" x2="14" y2="14"/><line x1="8" y1="18" x2="10" y2="18"/><line x1="12" y1="18" x2="16" y2="18"/></svg><span>마진 계산기</span></a>
+      </div>
+
+      <div class="nav-section">
         <div class="nav-label">설정</div>
         <a href="#" class="nav-item" data-page="api-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>쿠팡 API 설정</span></a>
       </div>
@@ -194,6 +199,60 @@
         <div class="page-top"><div><h1 class="page-title">체험단 신청 내역</h1></div></div>
         <div class="filter-chips" id="history-chips"><button class="chip active" data-s="all">전체</button><button class="chip" data-s="대기중">대기중</button><button class="chip" data-s="진행중">진행중</button><button class="chip" data-s="완료">완료</button></div>
         <div class="card" style="margin-top:16px"><table class="tbl"><thead><tr><th>상품명</th><th>키워드</th><th>건수</th><th>상태</th><th>신청일</th></tr></thead><tbody id="history-body"></tbody></table></div>
+      </section>
+
+      <!-- 마진 계산기 -->
+      <section id="page-margin-calc" class="page">
+        <div class="page-top"><div><h1 class="page-title">마진 계산기</h1><p class="page-desc">쿠팡 상품 마진을 실시간으로 계산합니다.</p></div></div>
+        <div class="mc-grid">
+          <div class="card mc-input-card">
+            <div class="card-header"><h3>비용 입력</h3></div>
+            <div class="mc-form">
+              <div class="mc-field"><label>판매가 (원)</label><input type="number" id="mc-sale" placeholder="0" min="0"></div>
+              <div class="mc-field"><label>상품 원가 (원)</label><input type="number" id="mc-cost" placeholder="0" min="0"></div>
+              <div class="mc-field"><label>배송비 (원)</label><input type="number" id="mc-shipping" placeholder="0" min="0" value="3000"></div>
+              <div class="mc-field"><label>쿠팡 수수료율 (%)</label><input type="number" id="mc-commission" placeholder="10.8" min="0" max="100" step="0.1" value="10.8"></div>
+              <div class="mc-field"><label>체험단 비용 (원)</label><input type="number" id="mc-review" placeholder="0" min="0"></div>
+              <div class="mc-field"><label>기타 비용 (원)</label><input type="number" id="mc-other" placeholder="0" min="0"></div>
+              <div class="mc-field"><label>수량</label><input type="number" id="mc-qty" placeholder="1" min="1" value="1"></div>
+            </div>
+          </div>
+          <div class="card mc-result-card">
+            <div class="card-header"><h3>마진 분석</h3></div>
+            <div class="mc-results">
+              <div class="mc-bar-wrap">
+                <div class="mc-bar"><div class="mc-bar-fill" id="mc-bar-fill" style="width:0%"></div></div>
+                <span class="mc-bar-label">마진율</span>
+              </div>
+              <div class="mc-profit-box">
+                <div class="mc-profit-main">
+                  <span class="mc-profit-label">순이익</span>
+                  <span class="mc-value" id="mc-r-profit">0원</span>
+                </div>
+                <div class="mc-profit-main">
+                  <span class="mc-profit-label">마진율</span>
+                  <span class="mc-value" id="mc-r-rate">0%</span>
+                </div>
+              </div>
+              <div class="mc-detail-list">
+                <div class="mc-row"><span>판매가</span><span id="mc-r-sale">0원</span></div>
+                <div class="mc-row"><span>상품 원가</span><span id="mc-r-cost">0원</span></div>
+                <div class="mc-row"><span>배송비</span><span id="mc-r-shipping">0원</span></div>
+                <div class="mc-row"><span>쿠팡 수수료</span><span id="mc-r-commission">0원</span></div>
+                <div class="mc-row"><span>체험단 비용</span><span id="mc-r-review">0원</span></div>
+                <div class="mc-row"><span>기타 비용</span><span id="mc-r-other">0원</span></div>
+                <div class="mc-row mc-row-total"><span>총 비용</span><span id="mc-r-totalcost">0원</span></div>
+              </div>
+              <div class="mc-qty-section">
+                <h4>수량별 합계</h4>
+                <div class="mc-row"><span>수량</span><span id="mc-r-qty">1개</span></div>
+                <div class="mc-row"><span>총 매출</span><span id="mc-r-total-revenue">0원</span></div>
+                <div class="mc-row"><span>총 비용</span><span id="mc-r-total-cost">0원</span></div>
+                <div class="mc-row mc-row-total"><span>총 순이익</span><span class="mc-value" id="mc-r-total-profit">0원</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- API 설정 -->
