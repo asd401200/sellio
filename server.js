@@ -24,6 +24,8 @@ const F = {
   suppliers: 'data/suppliers.json', mappings: 'data/mappings.json',
   purchaseOrders: 'data/purchase_orders.json',
   supplierRequests: 'data/supplier_requests.json',
+  wsProducts: 'data/ws_products.json',
+  wsOrders: 'data/ws_orders.json',
 };
 Object.values(F).forEach(f => {
   if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') ? '[]' : '{}', 'utf8');
@@ -640,6 +642,77 @@ app.post('/api/admin/solapi/send-bulk', async (req, res) => {
     console.error(`[솔라피] 다건 발송 실패: ${errMsg}`);
     res.status(400).json({ success: false, message: errMsg });
   }
+});
+
+// ========== 공급처 상품 관리 ==========
+app.get('/api/ws/products', (req, res) => {
+  let list = rj(F.wsProducts, []); if (!Array.isArray(list)) list = [];
+  res.json({ success: true, products: list, total: list.length });
+});
+
+app.post('/api/ws/product/save', imgUpload.single('image'), (req, res) => {
+  let list = rj(F.wsProducts, []); if (!Array.isArray(list)) list = [];
+  const { id, name, category, tax, price, shipping, options, delivery, origin, note } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '상품명 필요' });
+  if (!price) return res.status(400).json({ success: false, message: '공급가 필요' });
+
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : (req.body.existingImage || '');
+
+  if (id) {
+    const idx = list.findIndex(p => String(p.id) === String(id));
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], name, category: category || '기타', tax: tax || '비과세', price: parseInt(price) || 0, shipping: shipping || '수량별배송비', options: options || '', delivery: delivery || '', origin: origin || '', note: note || '', image: imageUrl || list[idx].image, updatedAt: new Date().toISOString() };
+    }
+  } else {
+    list.push({ id: Date.now(), name, category: category || '기타', tax: tax || '비과세', price: parseInt(price) || 0, shipping: shipping || '수량별배송비', options: options || '', delivery: delivery || '', origin: origin || '', note: note || '', image: imageUrl, createdAt: new Date().toISOString() });
+  }
+  wj(F.wsProducts, list);
+  res.json({ success: true });
+});
+
+app.post('/api/ws/product/delete', (req, res) => {
+  let list = rj(F.wsProducts, []);
+  list = list.filter(p => String(p.id) !== String(req.body.id));
+  wj(F.wsProducts, list);
+  res.json({ success: true });
+});
+
+// ========== 공급처 주문 관리 ==========
+app.get('/api/ws/orders', (req, res) => {
+  let list = rj(F.wsOrders, []); if (!Array.isArray(list)) list = [];
+  res.json({ success: true, orders: list, total: list.length });
+});
+
+app.post('/api/ws/order/save', (req, res) => {
+  let list = rj(F.wsOrders, []); if (!Array.isArray(list)) list = [];
+  const { name, phone, email, address, productId, productName, quantity, amount, memo } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '주문자명 필요' });
+  if (!productId) return res.status(400).json({ success: false, message: '상품 선택 필요' });
+
+  const ordNo = 'WS' + Date.now().toString().slice(-10);
+  list.unshift({
+    id: Date.now(), orderNo: ordNo, name, phone: phone || '', email: email || '',
+    address: address || '', productId, productName: productName || '', quantity: parseInt(quantity) || 1,
+    amount: parseInt(amount) || 0, memo: memo || '', status: '신규',
+    createdAt: new Date().toISOString()
+  });
+  wj(F.wsOrders, list);
+  console.log(`[공급처 주문] ${ordNo} - ${name} - ${productName}`);
+  res.json({ success: true, orderNo: ordNo });
+});
+
+app.post('/api/ws/order/update-status', (req, res) => {
+  let list = rj(F.wsOrders, []); if (!Array.isArray(list)) list = [];
+  const idx = list.findIndex(o => o.id === req.body.id);
+  if (idx >= 0) { list[idx].status = req.body.status; wj(F.wsOrders, list); }
+  res.json({ success: true });
+});
+
+app.post('/api/ws/order/delete', (req, res) => {
+  let list = rj(F.wsOrders, []);
+  list = list.filter(o => String(o.id) !== String(req.body.id));
+  wj(F.wsOrders, list);
+  res.json({ success: true });
 });
 
 // ===== Start =====

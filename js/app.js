@@ -86,6 +86,7 @@ async function enterApp() {
     $('app-admin').classList.remove('hidden');
     $('a-name').textContent = currentUser.company || '관리자';
     initAdminNav(); initAdminDash(); initAdminSupReq(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice(); initAdminSettings();
+    initWsProducts(); initWsOrderNew(); initWsOrders();
     loadAdminDash(); loadSolapiConfig();
   } else {
     $('app-seller').classList.remove('hidden');
@@ -732,6 +733,260 @@ async function rejectSupReq(id) {
     const d = await post('/admin/supplier-request/update', { id, status: '거절' });
     if (d.success) { toast('거절 처리 완료'); await loadAdminDash(); }
   } catch { toast('서버 오류'); }
+}
+
+// ========================================
+//  공급처: 상품 리스트
+// ========================================
+let wsProducts = [], wsCatFilter = 'all', wsEditId = null;
+
+function initWsProducts() {
+  $('btn-ws-add-product').onclick = () => openWsProdModal();
+  $('ws-prod-close').onclick = () => $('ws-prod-modal').classList.add('hidden');
+  $('ws-prod-modal').onclick = e => { if (e.target === e.currentTarget) $('ws-prod-modal').classList.add('hidden'); };
+  $('btn-ws-prod-save').onclick = saveWsProduct;
+  $('ws-prod-search').oninput = renderWsProducts;
+  $('ws-cat-tabs').onclick = e => {
+    const tab = e.target.closest('.ws-cat-tab'); if (!tab) return;
+    document.querySelectorAll('.ws-cat-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active'); wsCatFilter = tab.dataset.cat; renderWsProducts();
+  };
+  $('ws-p-img-file').onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      $('ws-p-img-preview').innerHTML = `<div class="image-preview"><img src="${ev.target.result}" alt=""><button type="button" class="image-remove-btn" onclick="clearWsProdImg()">&times;</button></div>`;
+    };
+    reader.readAsDataURL(file);
+  };
+  $('btn-ws-excel-down').onclick = downloadWsExcel;
+  loadWsProducts();
+}
+
+function clearWsProdImg() {
+  $('ws-p-img-file').value = '';
+  $('ws-p-img-preview').innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg><span>이미지 업로드 (클릭)</span>';
+}
+
+async function loadWsProducts() {
+  try {
+    const d = await get('/ws/products');
+    if (d.success) { wsProducts = d.products || []; renderWsCats(); renderWsProducts(); }
+  } catch {}
+}
+
+function renderWsCats() {
+  const cats = [...new Set(wsProducts.map(p => p.category).filter(Boolean))];
+  const tabsHtml = '<button class="ws-cat-tab active" data-cat="all">전체보기</button>' +
+    cats.map(c => `<button class="ws-cat-tab" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
+  $('ws-cat-tabs').innerHTML = tabsHtml;
+}
+
+function renderWsProducts() {
+  const q = ($('ws-prod-search').value || '').toLowerCase();
+  let f = wsProducts;
+  if (wsCatFilter !== 'all') f = f.filter(p => p.category === wsCatFilter);
+  if (q) f = f.filter(p => (p.name || '').toLowerCase().includes(q));
+  $('ws-prod-total').textContent = `전체상품수 : ${f.length}개`;
+
+  $('ws-prod-grid').innerHTML = f.length ? f.map(p => `
+    <div class="ws-prod-card" data-wsid="${p.id}">
+      ${p.tax === '비과세' ? '<span class="ws-tax-badge">비과세</span>' : '<span class="ws-tax-badge" style="background:var(--blue)">과세</span>'}
+      ${p.image ? `<img class="ws-prod-img" src="${esc(p.image)}" alt="${esc(p.name)}">` : '<div class="ws-prod-img-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>'}
+      <div class="ws-prod-info">
+        <div class="ws-prod-name">${esc(p.name)}</div>
+        <div class="ws-prod-price">공급가: <strong>₩${(p.price || 0).toLocaleString()}~</strong> ${p.options ? '부터(옵션별차등)' : ''}</div>
+        <div class="ws-prod-ship">배송비: <strong>${esc(p.shipping || '수량별배송비')}</strong></div>
+        <div class="ws-prod-ship">${esc(p.delivery || '')}</div>
+      </div>
+    </div>
+  `).join('') : '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--gray-400)">등록된 상품이 없습니다. 상품을 등록해주세요.</div>';
+
+  document.querySelectorAll('.ws-prod-card').forEach(c => c.onclick = () => {
+    const id = parseInt(c.dataset.wsid);
+    const p = wsProducts.find(x => x.id === id);
+    if (p) openWsProdModal(p);
+  });
+}
+
+function openWsProdModal(product) {
+  wsEditId = product ? product.id : null;
+  $('ws-prod-modal-title').textContent = product ? '상품 수정' : '상품 등록';
+  $('btn-ws-prod-save').textContent = product ? '수정하기' : '등록하기';
+  $('ws-p-name').value = product?.name || '';
+  $('ws-p-cat').value = product?.category || '과일';
+  $('ws-p-tax').value = product?.tax || '비과세';
+  $('ws-p-price').value = product?.price || '';
+  $('ws-p-ship').value = product?.shipping || '수량별배송비';
+  $('ws-p-options').value = product?.options || '';
+  $('ws-p-delivery').value = product?.delivery || '';
+  $('ws-p-origin').value = product?.origin || '';
+  $('ws-p-note').value = product?.note || '';
+  $('ws-p-img-file').value = '';
+  if (product?.image) {
+    $('ws-p-img-preview').innerHTML = `<div class="image-preview"><img src="${esc(product.image)}" alt=""><button type="button" class="image-remove-btn" onclick="event.stopPropagation();clearWsProdImg()">&times;</button></div>`;
+  } else { clearWsProdImg(); }
+  $('ws-prod-modal').classList.remove('hidden');
+}
+
+async function saveWsProduct() {
+  const name = $('ws-p-name').value.trim();
+  if (!name) return toast('상품명 입력');
+  if (!$('ws-p-price').value) return toast('공급가 입력');
+
+  const btn = $('btn-ws-prod-save'); btn.disabled = true; btn.textContent = '저장 중...';
+  const fd = new FormData();
+  if (wsEditId) fd.append('id', wsEditId);
+  fd.append('name', name);
+  fd.append('category', $('ws-p-cat').value);
+  fd.append('tax', $('ws-p-tax').value);
+  fd.append('price', $('ws-p-price').value);
+  fd.append('shipping', $('ws-p-ship').value);
+  fd.append('options', $('ws-p-options').value);
+  fd.append('delivery', $('ws-p-delivery').value);
+  fd.append('origin', $('ws-p-origin').value);
+  fd.append('note', $('ws-p-note').value);
+
+  const imgFile = $('ws-p-img-file').files[0];
+  if (imgFile) {
+    fd.append('image', imgFile);
+  } else if (wsEditId) {
+    const existing = wsProducts.find(p => p.id === wsEditId);
+    if (existing?.image) fd.append('existingImage', existing.image);
+  }
+
+  try {
+    const d = await fetchRaw(`${API}/ws/product/save`, { method: 'POST', body: fd });
+    if (d.success) {
+      toast(wsEditId ? '상품 수정 완료' : '상품 등록 완료');
+      $('ws-prod-modal').classList.add('hidden');
+      await loadWsProducts();
+    } else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+  btn.disabled = false; btn.textContent = wsEditId ? '수정하기' : '등록하기';
+}
+
+function downloadWsExcel() {
+  if (!wsProducts.length) return toast('상품 없음');
+  const data = wsProducts.map(p => ({ '상품명': p.name, '카테고리': p.category, '과세구분': p.tax, '공급가': p.price, '배송비': p.shipping, '옵션': p.options, '배송방법': p.delivery, '원산지': p.origin, '비고': p.note }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '상품');
+  XLSX.writeFile(wb, `공급처_상품_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('엑셀 다운로드');
+}
+
+// ========================================
+//  공급처: 주문입력
+// ========================================
+function initWsOrderNew() {
+  $('ws-ord-product').onchange = () => {
+    const pid = $('ws-ord-product').value;
+    const p = wsProducts.find(x => String(x.id) === pid);
+    const qty = parseInt($('ws-ord-qty').value) || 1;
+    $('ws-ord-amount').value = p ? (p.price * qty).toLocaleString() + '원' : '';
+  };
+  $('ws-ord-qty').oninput = () => {
+    const pid = $('ws-ord-product').value;
+    const p = wsProducts.find(x => String(x.id) === pid);
+    const qty = parseInt($('ws-ord-qty').value) || 1;
+    $('ws-ord-amount').value = p ? (p.price * qty).toLocaleString() + '원' : '';
+  };
+  $('btn-ws-ord-submit').onclick = submitWsOrder;
+}
+
+function populateWsOrderProducts() {
+  const sel = $('ws-ord-product');
+  const curVal = sel.value;
+  sel.innerHTML = '<option value="">상품을 선택하세요</option>' +
+    wsProducts.map(p => `<option value="${p.id}">${esc(p.name)} - ₩${(p.price||0).toLocaleString()}</option>`).join('');
+  if (curVal) sel.value = curVal;
+}
+
+async function submitWsOrder() {
+  const name = $('ws-ord-name').value.trim();
+  const productId = $('ws-ord-product').value;
+  if (!name) return toast('주문자명 입력');
+  if (!productId) return toast('상품 선택');
+  if (!$('ws-ord-addr').value.trim()) return toast('배송지 입력');
+
+  const p = wsProducts.find(x => String(x.id) === productId);
+  const qty = parseInt($('ws-ord-qty').value) || 1;
+  const btn = $('btn-ws-ord-submit'); btn.disabled = true; btn.textContent = '등록 중...';
+  try {
+    const d = await post('/ws/order/save', {
+      name, phone: $('ws-ord-phone').value, email: $('ws-ord-email').value,
+      address: $('ws-ord-addr').value, productId, productName: p?.name || '',
+      quantity: qty, amount: (p?.price || 0) * qty, memo: $('ws-ord-memo').value
+    });
+    if (d.success) {
+      toast(`주문 등록 완료: ${d.orderNo}`);
+      ['ws-ord-name','ws-ord-phone','ws-ord-email','ws-ord-addr','ws-ord-memo'].forEach(id => $(id).value = '');
+      $('ws-ord-product').value = ''; $('ws-ord-qty').value = '1'; $('ws-ord-amount').value = '';
+    } else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+  btn.disabled = false; btn.textContent = '주문 등록';
+}
+
+// ========================================
+//  공급처: 주문리스트
+// ========================================
+let wsOrders = [], wsOrdFilter = 'all';
+
+function initWsOrders() {
+  $('btn-ws-ord-refresh').onclick = loadWsOrders;
+  $('ws-ord-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#ws-ord-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); wsOrdFilter = c.dataset.s; renderWsOrders();
+  };
+  $('btn-ws-ord-excel').onclick = downloadWsOrderExcel;
+  loadWsOrders();
+}
+
+async function loadWsOrders() {
+  try {
+    const d = await get('/ws/orders');
+    if (d.success) { wsOrders = d.orders || []; renderWsOrders(); }
+  } catch {}
+  populateWsOrderProducts();
+}
+
+function renderWsOrders() {
+  const f = wsOrdFilter === 'all' ? wsOrders : wsOrders.filter(o => o.status === wsOrdFilter);
+  const bc = s => s === '신규' ? 'blue' : s === '확인' ? 'orange' : s === '배송중' ? 'blue' : s === '완료' ? 'green' : 'red';
+  const statusOpts = ['신규','확인','배송중','완료','취소'];
+  $('ws-ord-body').innerHTML = f.length ? f.map(o => `<tr>
+    <td><code style="font-size:12px">${esc(o.orderNo || '-')}</code></td>
+    <td>${esc(o.name)}</td>
+    <td style="max-width:200px">${esc(o.productName || '-')}</td>
+    <td style="text-align:center">${o.quantity || 1}</td>
+    <td style="text-align:right">₩${(o.amount || 0).toLocaleString()}</td>
+    <td><span class="badge ${bc(o.status)}">${esc(o.status)}</span></td>
+    <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString('ko') : '-'}</td>
+    <td>
+      <select class="input-sm" style="padding:6px 10px;font-size:12px" onchange="updateWsOrdStatus(${o.id},this.value)">
+        ${statusOpts.map(s => `<option value="${s}" ${o.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty"><p>주문이 없습니다</p></td></tr>';
+}
+
+async function updateWsOrdStatus(id, status) {
+  try {
+    await post('/ws/order/update-status', { id, status });
+    const o = wsOrders.find(x => x.id === id);
+    if (o) o.status = status;
+    toast(`주문 상태: ${status}`);
+  } catch { toast('실패'); }
+}
+
+function downloadWsOrderExcel() {
+  if (!wsOrders.length) return toast('주문 없음');
+  const data = wsOrders.map(o => ({ '주문번호': o.orderNo, '주문자': o.name, '연락처': o.phone, '이메일': o.email, '배송지': o.address, '상품명': o.productName, '수량': o.quantity, '금액': o.amount, '상태': o.status, '배송메모': o.memo, '주문일': o.createdAt }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '주문');
+  XLSX.writeFile(wb, `공급처_주문_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast('엑셀 다운로드');
 }
 
 // ========================================
