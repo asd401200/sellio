@@ -3,7 +3,7 @@
 // ============================================
 const API = location.origin + '/api';
 let currentUser = null, products = [], orders = [], reviewTags = new Set();
-let orderTypeFilter = 'all', suppliers = [], mappings = [];
+let orderTypeFilter = 'all', suppliers = [], mappings = [], supplierProducts = {};
 let allRequests = [], allUsers = [], allSuppliers = [], allMappings = [];
 let adminReqFilter = 'all', modalProduct = null;
 
@@ -23,6 +23,12 @@ function initAuth() {
     document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     $('login-role').value = tab.dataset.role;
+  });
+  // 회원가입 역할 탭
+  document.querySelectorAll('.reg-role-tab').forEach(tab => tab.onclick = () => {
+    document.querySelectorAll('.reg-role-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    $('reg-role-val').value = tab.dataset.role;
   });
   $('goto-register').onclick = e => { e.preventDefault(); $('login-card').classList.add('hidden'); $('register-card').classList.remove('hidden'); };
   $('goto-login').onclick = e => { e.preventDefault(); $('register-card').classList.add('hidden'); $('login-card').classList.remove('hidden'); };
@@ -47,7 +53,7 @@ async function doLogin() {
 
 async function doRegister() {
   const v = id => $(id).value.trim();
-  const role = document.querySelector('input[name="reg-role"]:checked')?.value || 'seller';
+  const role = $('reg-role-val').value || 'seller';
   const data = { loginId: v('reg-id'), password: v('reg-pw'), password2: v('reg-pw2'), company: v('reg-company'), ceo: v('reg-ceo'), mobile: v('reg-mobile'), email: v('reg-email'), role };
   if (!data.loginId) return toast('아이디 입력');
   if (!data.password) return toast('비밀번호 입력');
@@ -86,13 +92,14 @@ async function enterApp() {
     $('s-name').textContent = currentUser.company || currentUser.loginId;
     $('s-avatar').textContent = (currentUser.company || currentUser.loginId || 'U')[0].toUpperCase();
     $('s-sub').textContent = '셀러';
-    initSellerNav(); initProducts(); initReview(); initOrders(); initSettings(); initModal();
+    initSellerNav(); initSellerDash(); initProducts(); initReview(); initRvClassify(); initOrders(); initSettings(); initModal();
     setDates();
     try {
       const d = await post('/user/load-keys', { userId: currentUser.uid });
       if (d.keys) { localStorage.setItem('sellio_api', JSON.stringify(d.keys)); $('s-vid').value = d.keys.vendorId||''; $('s-ak').value = d.keys.accessKey||''; $('s-sk').value = d.keys.secretKey||''; $('s-sub').textContent = `셀러 #${d.keys.vendorId}`; }
     } catch {}
     await loadTags(); await loadSuppliers(); await loadMappings();
+    loadSellerDash();
   }
   toast(`${currentUser.company || currentUser.loginId}님 환영합니다!`);
 }
@@ -101,7 +108,6 @@ function setDates() {
   const t = new Date().toISOString().split('T')[0], w = new Date(Date.now()-7*864e5).toISOString().split('T')[0];
   if ($('s-to')) $('s-to').value = t;
   if ($('s-from')) $('s-from').value = w;
-  if ($('s-rvinv-date')) $('s-rvinv-date').value = t;
 }
 
 // ========================================
@@ -109,7 +115,6 @@ function setDates() {
 // ========================================
 function initSellerNav() {
   document.querySelectorAll('#app-seller .nav-item').forEach(i => i.onclick = e => { e.preventDefault(); navTo(i.dataset.page); });
-  // 서브탭 이벤트
   document.querySelectorAll('.sub-tab').forEach(tab => tab.onclick = () => {
     const parent = tab.closest('section');
     parent.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
@@ -126,11 +131,46 @@ function navTo(p) {
 }
 
 // ========================================
-//  SELLER: 상품관리 (매핑 + 체험단 버튼)
+//  SELLER: 대시보드
+// ========================================
+function initSellerDash() {
+  $('btn-s-dash-refresh').onclick = loadSellerDash;
+}
+async function loadSellerDash() {
+  const k = getKeys();
+  if (!k?.vendorId) {
+    ['sd-accept','sd-instruct','sd-delivering','sd-delivered'].forEach(id => $(id).textContent = '-');
+    $('sd-review').textContent = '-'; $('sd-mapped').textContent = '-';
+    return;
+  }
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const from = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    const d = await post('/coupang/orders', { ...k, status: 'ALL', createdAtFrom: from, createdAtTo: today });
+    if (d.success) {
+      const o = d.orders || [];
+      const cnt = s => o.filter(x => x.status === s).length;
+      $('sd-accept').innerHTML = `${cnt('ACCEPT')}<small>건</small>`;
+      $('sd-instruct').innerHTML = `${cnt('INSTRUCT')}<small>건</small>`;
+      $('sd-delivering').innerHTML = `${cnt('DELIVERING')}<small>건</small>`;
+      $('sd-delivered').innerHTML = `${cnt('FINAL_DELIVERY')}<small>건</small>`;
+    }
+  } catch {}
+  try {
+    const r = await get(`/review/list?userId=${currentUser.uid}`);
+    $('sd-review').innerHTML = `${(r.requests||[]).length}<small>건</small>`;
+  } catch {}
+  try {
+    const m = await get(`/mappings?userId=${currentUser.uid}`);
+    $('sd-mapped').innerHTML = `${(m.mappings||[]).filter(x=>x.active!==false).length}<small>개</small>`;
+  } catch {}
+}
+
+// ========================================
+//  SELLER: 상품관리 (매핑 + 신청 버튼)
 // ========================================
 function initProducts() {
   $('btn-s-fetch').onclick = fetchProducts;
-  $('btn-s-collect').onclick = collectAccept;
   $('s-search').oninput = renderProducts;
 }
 
@@ -144,26 +184,27 @@ async function fetchProducts() {
   btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 상품 가져오기';
 }
 
-async function collectAccept() {
-  const k = needKeys(); if (!k) return;
-  const btn = $('btn-s-collect'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  try {
-    const d = await post('/coupang/orders', { ...k, status: 'ACCEPT', createdAtFrom: new Date(Date.now()-14*864e5).toISOString().split('T')[0], createdAtTo: new Date().toISOString().split('T')[0] });
-    if (d.success && d.orders.length) {
-      $('s-accept-card').classList.remove('hidden');
-      $('s-accept-count').textContent = `${d.orders.length}건`;
-      $('s-accept-body').innerHTML = d.orders.map(o => `<tr><td><code>${o.orderId}</code></td><td>${esc(o.productName)}</td><td>${esc(o.optionName||'-')}</td><td>${o.quantity}</td><td>${esc(o.receiverName)}</td><td>${o.orderDate?new Date(o.orderDate).toLocaleDateString('ko'):'-'}</td></tr>`).join('');
-      toast(`결제완료 ${d.orders.length}건`);
-    } else { toast('결제완료 주문 없음'); }
-  } catch { toast('실패'); }
-  btn.disabled = false; btn.textContent = '결제완료주문 수합';
-}
-
 function renderProducts() {
   const q = ($('s-search').value||'').toLowerCase();
   const f = products.filter(p => !q || (p.name||'').toLowerCase().includes(q) || (p.option||'').toLowerCase().includes(q));
   $('s-prod-count').textContent = `${f.length}개`;
-  const supOpts = suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  // 공급처_옵션 형태의 select 생성
+  let supOptHtml = '<option value="">공급처 옵션 선택</option>';
+  suppliers.forEach(s => {
+    if (s.products?.length) {
+      supOptHtml += `<optgroup label="${esc(s.name)}">`;
+      s.products.forEach((sp, idx) => {
+        const val = `${s.id}__${idx}`;
+        const label = `${s.name}_${sp.option}`;
+        const priceStr = sp.price ? ` (₩${sp.price.toLocaleString()})` : '';
+        supOptHtml += `<option value="${val}">${esc(label)}${priceStr}</option>`;
+      });
+      supOptHtml += '</optgroup>';
+    } else {
+      supOptHtml += `<option value="${s.id}__none">${esc(s.name)} (상품없음)</option>`;
+    }
+  });
+
   $('s-prod-body').innerHTML = f.length ? f.map((p,i) => {
     const pid = String(p.vendorItemId||p.sellerProductId);
     const map = mappings.find(m => m.productId === pid);
@@ -174,14 +215,20 @@ function renderProducts() {
       <td><code style="font-size:12px;color:var(--blue)">${p.vendorItemId||p.optionId||'-'}</code></td>
       <td><span class="badge blue">${esc(p.option||'-')}</span></td>
       <td style="text-align:center"><label class="switch"><input type="checkbox" ${isActive?'checked':''} data-toggle="${pid}" data-pname="${esc(p.name)}" data-opt="${esc(p.option||'')}" data-oid="${p.optionId||''}" data-sale="${p.salePrice||0}"><span class="switch-slider"></span></label></td>
-      <td><select class="input-sm mapping-select" data-map="${pid}" style="width:100%"><option value="">선택</option>${supOpts}</select></td>
-      <td><input type="number" class="input-sm mapping-cost" data-cost="${pid}" placeholder="원가" style="width:80px" value="${map?.costPrice||''}"></td>
-      <td style="text-align:center"><button class="btn-primary" style="padding:4px 10px;font-size:11px" data-rv="${i}">체험단</button></td>
+      <td><select class="input-sm mapping-select" data-map="${pid}" style="width:100%">${supOptHtml}</select></td>
+      <td style="text-align:center"><button class="btn-primary" style="padding:4px 12px;font-size:12px" data-rv="${i}">신청</button></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty"><p>상품 가져오기를 눌러주세요</p></td></tr>';
+  }).join('') : '<tr><td colspan="7" class="empty"><p>상품 가져오기를 눌러주세요</p></td></tr>';
 
-  // 기존 매핑값 세팅
-  f.forEach(p => { const pid = String(p.vendorItemId||p.sellerProductId); const map = mappings.find(m => m.productId===pid); if (map?.supplierId) { const sel = document.querySelector(`[data-map="${pid}"]`); if (sel) sel.value = String(map.supplierId); } });
+  // 기존 매핑값 세팅 (supplierOptionKey = "supplierId__optIdx")
+  f.forEach(p => {
+    const pid = String(p.vendorItemId||p.sellerProductId);
+    const map = mappings.find(m => m.productId===pid);
+    if (map?.supplierOptionKey) {
+      const sel = document.querySelector(`[data-map="${pid}"]`);
+      if (sel) sel.value = map.supplierOptionKey;
+    }
+  });
 
   // 이벤트 바인딩
   document.querySelectorAll('[data-toggle]').forEach(cb => cb.onchange = async () => {
@@ -192,15 +239,20 @@ function renderProducts() {
   document.querySelectorAll('.mapping-select').forEach(sel => sel.onchange = async () => {
     const pid = sel.dataset.map, p = products.find(x => String(x.vendorItemId||x.sellerProductId)===pid);
     if (!p) return;
-    const sup = suppliers.find(s => String(s.id)===sel.value), costEl = document.querySelector(`[data-cost="${pid}"]`);
-    await post('/mapping/save', { userId: currentUser.uid, productId: pid, productName: p.name, optionId: p.optionId||'', option: p.option||'', salePrice: p.salePrice||0, supplierId: sel.value, supplierName: sup?.name||'', costPrice: costEl?.value||0, active: true });
-    await loadMappings(); toast('매핑 저장');
+    const val = sel.value; // "supplierId__optIdx"
+    if (!val) return;
+    const [supId, optIdx] = val.split('__');
+    const sup = suppliers.find(s => String(s.id) === supId);
+    const supProduct = sup?.products?.[parseInt(optIdx)];
+    const supplierLabel = sup && supProduct ? `${sup.name}_${supProduct.option}` : sup?.name || '';
+    await post('/mapping/save', {
+      userId: currentUser.uid, productId: pid, productName: p.name, optionId: p.optionId||'', option: p.option||'',
+      salePrice: p.salePrice||0, supplierId: supId, supplierName: supplierLabel,
+      supplierOptionKey: val, costPrice: supProduct?.price||0, active: true
+    });
+    await loadMappings(); toast('매핑 저장: ' + supplierLabel);
   });
-  document.querySelectorAll('.mapping-cost').forEach(inp => inp.onblur = async () => {
-    const pid = inp.dataset.cost, map = mappings.find(m => m.productId===pid);
-    if (map) { await post('/mapping/save', { ...map, userId: currentUser.uid, costPrice: inp.value }); await loadMappings(); }
-  });
-  // 체험단 버튼
+  // 신청 버튼
   document.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => openModal(f[parseInt(b.dataset.rv)]));
   $('s-prod-footer').innerHTML = f.length ? `<span>총 ${f.length}개 / 활성 ${mappings.filter(m=>m.active!==false).length}개 / 매핑 ${mappings.filter(m=>m.active!==false&&m.supplierId).length}개</span>` : '';
 }
@@ -253,7 +305,6 @@ async function submitReview() {
 function initReview() {
   $('s-rvh-chips').onclick = e => { const c = e.target.closest('.chip'); if (!c) return; document.querySelectorAll('#s-rvh-chips .chip').forEach(x => x.classList.remove('active')); c.classList.add('active'); loadReviewHistory(c.dataset.s); };
   loadReviewHistory('all');
-  // 송장 업데이트
   $('s-rvinv-file').onchange = onRvInvFile;
   $('btn-s-rvinv-match').onclick = matchRvInv;
   $('btn-s-rvinv-apply').onclick = applyRvInv;
@@ -274,6 +325,108 @@ async function loadReviewHistory(filter) {
       $('s-rvh-body').innerHTML = list.length ? list.map(r => `<tr><td>${esc(r.productName)}</td><td>${esc(r.keyword)}</td><td>${r.totalCount||0}</td><td>${r.dailyCount||0}</td><td><span class="badge ${bc(r.status)}">${esc(r.status)}</span></td><td>${r.createdAt?new Date(r.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty"><p>신청 내역 없음</p></td></tr>';
     }
   } catch {}
+}
+
+// ========================================
+//  SELLER: 주문분류 (체험단 주문정보 → 결제완료 매칭 → 상품준비중 승인)
+// ========================================
+let rvClassParsed = [];
+function initRvClassify() {
+  $('s-rvclass-file').onchange = onRvClassFile;
+  $('btn-s-rvclass-match').onclick = doRvClassMatch;
+}
+function onRvClassFile(e) {
+  const file = e.target.files[0]; if (!file) return;
+  $('s-rvclass-fname').textContent = file.name;
+  $('btn-s-rvclass-match').disabled = false;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      rvClassParsed = rows.map(row => {
+        const keys = Object.keys(row);
+        const find = (...pats) => { const k = keys.find(k => pats.some(p => k.includes(p))); return k ? String(row[k]).trim() : ''; };
+        let orderId = find('주문번호', '주문');
+        // 주문번호 앞의 "/" 제거
+        if (orderId.startsWith('/')) orderId = orderId.substring(1);
+        return {
+          orderId,
+          productName: find('품명', '상품명'),
+          buyerName: find('주문자이름', '주문자', '이름'),
+          phone: find('연락가능한번호', '연락처'),
+          address: find('배송지주소', '주소'),
+        };
+      }).filter(r => r.orderId || r.buyerName);
+      toast(`${rvClassParsed.length}건 파싱`);
+    } catch { toast('파싱 실패'); }
+  };
+  reader.readAsArrayBuffer(file); e.target.value = '';
+}
+async function doRvClassMatch() {
+  if (!rvClassParsed.length) return toast('파일 먼저 업로드');
+  const k = needKeys(); if (!k) return;
+  const btn = $('btn-s-rvclass-match'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 매칭 중...';
+  try {
+    // 결제완료 주문 조회
+    const from = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    const to = new Date().toISOString().split('T')[0];
+    const d = await post('/coupang/orders', { ...k, status: 'ACCEPT', createdAtFrom: from, createdAtTo: to });
+    const acceptOrders = d.success ? d.orders : [];
+
+    // 매칭
+    const matched = rvClassParsed.map(row => {
+      let o = null;
+      if (row.orderId) o = acceptOrders.find(x => String(x.orderId) === row.orderId || String(x.shipmentBoxId) === row.orderId);
+      if (!o && row.buyerName) o = acceptOrders.find(x => x.receiverName === row.buyerName);
+      return { ...row, order: o, matched: !!o };
+    });
+
+    // 결과 표시
+    $('s-rvclass-placeholder').classList.add('hidden');
+    $('s-rvclass-result').classList.remove('hidden');
+
+    const matchedList = matched.filter(r => r.matched);
+    $('s-rvclass-body').innerHTML = matched.map(r => `<tr>
+      <td><code>${r.order?.orderId || r.orderId || '-'}</code></td>
+      <td>${esc(r.productName || r.order?.productName || '-')}</td>
+      <td>${esc(r.buyerName || r.order?.receiverName || '-')}</td>
+      <td><span class="badge ${r.matched ? 'green' : 'red'}">${r.matched ? 'O' : 'X'}</span></td>
+      <td>-</td>
+    </tr>`).join('');
+    $('s-rvclass-summary').innerHTML = `<span>매칭: ${matchedList.length}/${matched.length}건</span>`;
+
+    // 매칭된 건 자동 승인 (결제완료 → 상품준비중)
+    if (matchedList.length > 0) {
+      const boxIds = matchedList.map(r => String(r.order.shipmentBoxId)).filter(Boolean);
+      if (boxIds.length) {
+        const approveRes = await post('/coupang/approve-orders', { ...k, shipmentBoxIds: boxIds });
+        if (approveRes.success) {
+          // 승인 결과 반영
+          $('s-rvclass-body').innerHTML = matched.map(r => {
+            const ar = r.matched && approveRes.results ? approveRes.results.find(x => String(x.shipmentBoxId) === String(r.order?.shipmentBoxId)) : null;
+            return `<tr>
+              <td><code>${r.order?.orderId || r.orderId || '-'}</code></td>
+              <td>${esc(r.productName || r.order?.productName || '-')}</td>
+              <td>${esc(r.buyerName || r.order?.receiverName || '-')}</td>
+              <td><span class="badge ${r.matched ? 'green' : 'red'}">${r.matched ? 'O' : 'X'}</span></td>
+              <td><span class="badge ${ar?.success ? 'green' : r.matched ? 'red' : 'gray'}">${ar?.success ? '승인' : r.matched ? '실패' : '-'}</span></td>
+            </tr>`;
+          }).join('');
+          $('s-rvclass-summary').innerHTML = `<span>매칭: ${matchedList.length}/${matched.length}건 | 승인 성공: ${approveRes.summary.success} / 실패: ${approveRes.summary.fail}</span>`;
+          // 승인된 주문을 체험단 태그에 추가
+          matchedList.forEach(r => { if (r.order?.orderId) reviewTags.add(String(r.order.orderId)); });
+          await saveTags();
+          toast(`승인 완료: 성공 ${approveRes.summary.success}건`);
+        } else {
+          toast('승인 API 실패');
+        }
+      }
+    } else {
+      toast('매칭된 주문이 없습니다');
+    }
+  } catch (e) { console.error(e); toast('주문 조회 실패'); }
+  btn.disabled = false; btn.innerHTML = '매칭 + 승인';
 }
 
 let rvInvParsed = [];
@@ -351,7 +504,6 @@ async function saveTags() { if (currentUser) try { await post('/review/set-tags'
 //  SELLER: 설정 (API + 공급처 통합)
 // ========================================
 function initSettings() {
-  // API
   const keys = getKeys();
   if (keys) { $('s-vid').value = keys.vendorId||''; $('s-ak').value = keys.accessKey||''; $('s-sk').value = keys.secretKey||''; }
   $('btn-s-test').onclick = async () => {
@@ -367,18 +519,24 @@ function initSettings() {
     if (currentUser) try { await post('/user/save-keys', { userId: currentUser.uid, vendorId: v, accessKey: a, secretKey: s }); } catch {}
     $('s-sub').textContent = `셀러 #${v}`; toast('API 키 저장 완료');
   };
-  // 공급처 등록 요청
   $('btn-s-req-submit').onclick = submitSupReq;
   loadSupReqs();
 }
 async function submitSupReq() {
   const name = $('s-req-name').value.trim(), url = $('s-req-url').value.trim();
-  if (!name) return toast('공급처명 입력'); if (!url) return toast('URL 입력');
+  if (!name) return toast('공급처명 입력'); if (!url) return toast('스프레드시트 URL 입력');
   try { const d = await post('/supplier-request/save', { userId: currentUser.uid, seller: currentUser.company||currentUser.loginId, name, url }); if (d.success) { toast('요청 완료'); $('s-req-name').value=''; $('s-req-url').value=''; loadSupReqs(); } } catch { toast('실패'); }
 }
 async function loadSupReqs() {
   if (!currentUser) return;
-  try { const d = await get(`/supplier-request/list?userId=${currentUser.uid}`); if (d.success) { const list = d.requests||[]; const bc = s => s==='대기중'?'orange':s==='처리완료'?'green':'blue'; $('s-req-body').innerHTML = list.length ? list.map(r => `<tr><td>${esc(r.name)}</td><td><a href="${esc(r.url)}" target="_blank" style="color:var(--blue)">${esc(r.url).substring(0,40)}${r.url.length>40?'...':''}</a></td><td><span class="badge ${bc(r.status)}">${esc(r.status)}</span></td><td>${r.createdAt?new Date(r.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="4" class="empty"><p>요청 내역 없음</p></td></tr>'; } } catch {}
+  try {
+    const d = await get(`/supplier-request/list?userId=${currentUser.uid}`);
+    if (d.success) {
+      const list = d.requests||[];
+      const bc = s => s==='대기중'?'orange':s==='승인'?'green':'blue';
+      $('s-req-body').innerHTML = list.length ? list.map(r => `<tr><td>${esc(r.name)}</td><td><span class="badge ${bc(r.status)}">${esc(r.status)}</span></td><td>${r.productCount||'-'}</td><td>${r.createdAt?new Date(r.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="4" class="empty"><p>등록된 공급처 없음</p></td></tr>';
+    }
+  } catch {}
 }
 
 // ========================================
@@ -399,7 +557,7 @@ function renderAdminSellers() {
 }
 function initAdminPO() { $('btn-a-load-po').onclick = async () => {
   const btn = $('btn-a-load-po'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  try { const d = await get('/admin/purchase-order'); if (d.success) { const po = d.purchaseOrder||{}, keys = Object.keys(po); $('a-po-content').innerHTML = keys.length ? keys.map(sid => { const g = po[sid]; return `<div class="card" style="margin-top:16px"><div class="card-header"><h3>${esc(g.supplier?.name||'?')}</h3><span class="badge blue">${g.items.length}개</span></div><table class="tbl"><thead><tr><th>셀러</th><th>상품명</th><th>옵션</th><th>판매가</th><th>원가</th></tr></thead><tbody>${g.items.map(it=>`<tr><td>${esc(it.userId||'-')}</td><td>${esc(it.productName)}</td><td>${esc(it.option||'-')}</td><td>${it.salePrice?it.salePrice.toLocaleString()+'원':'-'}</td><td>${it.costPrice?it.costPrice.toLocaleString()+'원':'-'}</td></tr>`).join('')}</tbody></table></div>`; }).join('') : '<div class="card" style="margin-top:16px;padding:40px;text-align:center;color:#999">매핑 없음</div>'; } } catch { toast('실패'); }
+  try { const d = await get('/admin/purchase-order'); if (d.success) { const po = d.purchaseOrder||{}, keys = Object.keys(po); $('a-po-content').innerHTML = keys.length ? keys.map(sid => { const g = po[sid]; return `<div class="card" style="margin-top:16px"><div class="card-header"><h3>${esc(g.supplier?.name||'?')}</h3><span class="badge blue">${g.items.length}개</span></div><table class="tbl"><thead><tr><th>셀러</th><th>상품명</th><th>옵션</th><th>판매가</th></tr></thead><tbody>${g.items.map(it=>`<tr><td>${esc(it.userId||'-')}</td><td>${esc(it.productName)}</td><td>${esc(it.option||'-')}</td><td>${it.salePrice?it.salePrice.toLocaleString()+'원':'-'}</td></tr>`).join('')}</tbody></table></div>`; }).join('') : '<div class="card" style="margin-top:16px;padding:40px;text-align:center;color:#999">매핑 없음</div>'; } } catch { toast('실패'); }
   btn.disabled = false; btn.textContent = '발주서 생성';
 }; }
 function initAdminInvoice() { $('a-inv-file').onchange = async e => { const file = e.target.files[0]; if (!file) return; $('a-inv-fname').textContent = file.name; const fd = new FormData(); fd.append('file', file); try { const d = await fetchRaw(`${API}/invoice/parse-excel`, { method: 'POST', body: fd }); if (d.success&&d.data.length) { $('a-inv-result').classList.remove('hidden'); $('a-inv-result').dataset.parsed = JSON.stringify(d.data); $('a-inv-body').innerHTML = d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td>${esc(r.productName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join(''); toast(`${d.data.length}건`); } } catch { toast('파싱 실패'); } e.target.value = ''; };

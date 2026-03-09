@@ -83,11 +83,12 @@ app.post('/api/auth/login', (req, res) => {
   if (!loginId || !password) return res.status(400).json({ success: false, message: '입력 필요' });
   const users = rj(F.users, {});
   const h = hash(password);
-  const entry = Object.entries(users).find(([_, u]) => u.loginId === loginId && u.passwordHash === h);
+  // role이 지정되면 role까지 매칭, 없으면 첫 매칭
+  const entry = role
+    ? Object.entries(users).find(([_, u]) => u.loginId === loginId && u.passwordHash === h && u.role === role)
+    : Object.entries(users).find(([_, u]) => u.loginId === loginId && u.passwordHash === h);
   if (!entry) return res.status(401).json({ success: false, message: '아이디 또는 비밀번호 오류' });
   const [uid, data] = entry;
-  // 로그인 유형 체크
-  if (role && data.role !== role) return res.status(403).json({ success: false, message: role === 'admin' ? '관리자 계정이 아닙니다' : '셀러 계정이 아닙니다' });
   data.lastLogin = new Date().toISOString();
   wj(F.users, users);
   res.json({ success: true, user: { uid, loginId: data.loginId, role: data.role, company: data.company, ceo: data.ceo, mobile: data.mobile, email: data.email } });
@@ -97,17 +98,109 @@ app.post('/api/auth/login', (req, res) => {
 (function seedAccounts() {
   const users = rj(F.users, {});
   const hasAdmin = Object.values(users).some(u => u.loginId === '1234' && u.role === 'admin');
-  const hasSeller = Object.values(users).some(u => u.loginId === 'seller' && u.role === 'seller');
+  const hasSeller = Object.values(users).some(u => u.loginId === '1234' && u.role === 'seller');
   if (!hasAdmin) {
     users['u_admin_seed'] = { loginId: '1234', passwordHash: hash('1234'), role: 'admin', company: 'Sellio 관리자', ceo: '관리자', mobile: '010-0000-0000', email: 'admin@sellio.kr', createdAt: new Date().toISOString() };
     console.log('[시드] 관리자 계정 생성: 1234 / 1234');
   }
   if (!hasSeller) {
-    users['u_seller_seed'] = { loginId: 'seller', passwordHash: hash('1234'), role: 'seller', company: '테스트셀러', ceo: '홍길동', mobile: '010-1234-5678', email: 'seller@test.com', createdAt: new Date().toISOString() };
-    console.log('[시드] 셀러 계정 생성: seller / 1234');
+    users['u_seller_seed'] = { loginId: '1234', passwordHash: hash('1234'), role: 'seller', company: '테스트셀러', ceo: '홍길동', mobile: '010-1234-5678', email: 'seller@test.com', createdAt: new Date().toISOString() };
+    console.log('[시드] 셀러 계정 생성: 1234 / 1234');
   }
   if (!hasAdmin || !hasSeller) wj(F.users, users);
 })();
+
+// ========== 공급처 스프레드시트 → 상품 파싱 공용 함수 ==========
+function parseCSV(csvText) {
+  const rows = [];
+  let current = '', inQuote = false, row = [];
+  for (let i = 0; i < csvText.length; i++) {
+    const ch = csvText[i];
+    if (ch === '"') { if (inQuote && csvText[i+1] === '"') { current += '"'; i++; } else inQuote = !inQuote; }
+    else if (ch === ',' && !inQuote) { row.push(current.trim()); current = ''; }
+    else if ((ch === '\n' || ch === '\r') && !inQuote) { if (current || row.length) { row.push(current.trim()); rows.push(row); row = []; current = ''; } if (ch === '\r' && csvText[i+1] === '\n') i++; }
+    else current += ch;
+  }
+  if (current || row.length) { row.push(current.trim()); rows.push(row); }
+  return rows;
+}
+
+function parseSheetProducts(rows) {
+  if (rows.length < 2) return [];
+  const header = rows[0].map(h => h.replace(/\n/g,' ').trim());
+  const nameIdx = header.findIndex(h => h.includes('품목') || h.includes('상품'));
+  const optIdx = header.findIndex(h => h.includes('옵션'));
+  const priceIdx = header.findIndex(h => h.includes('공급가') || h.includes('가격'));
+  const originIdx = header.findIndex(h => h.includes('원산지'));
+  const products = [];
+  let lastProductName = '', lastOrigin = '';
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    let rawName = nameIdx >= 0 ? (r[nameIdx]||'').replace(/\[.*?\]/g,'').replace(/\n/g,' ').trim() : '';
+    const option = optIdx >= 0 ? (r[optIdx]||'').trim() : '';
+    const price = priceIdx >= 0 ? (r[priceIdx]||'').replace(/[₩,원\s]/g,'') : '';
+    const origin = originIdx >= 0 ? (r[originIdx]||'').trim() : '';
+    if (rawName) lastProductName = rawName;
+    if (origin) lastOrigin = origin;
+    if (option && lastProductName) products.push({ name: lastProductName, option, price: parseInt(price)||0, origin: lastOrigin });
+  }
+  return products;
+}
+
+async function fetchSheetProducts(sheetUrl) {
+  const idMatch = sheetUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const gidMatch = sheetUrl.match(/gid=(\d+)/);
+  if (!idMatch) return [];
+  const sheetId = idMatch[1];
+  const gid = gidMatch ? gidMatch[1] : '0';
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`;
+  const resp = await axios.get(csvUrl, { timeout: 15000, responseType: 'text' });
+  return parseSheetProducts(parseCSV(resp.data));
+}
+
+// ========== 모든 공급처 스프레드시트 일괄 업데이트 ==========
+async function refreshAllSuppliers() {
+  let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
+  let updated = 0;
+  for (const sup of suppliers) {
+    if (!sup.sheetUrl) continue;
+    try {
+      const products = await fetchSheetProducts(sup.sheetUrl);
+      sup.products = products;
+      sup.updatedAt = new Date().toISOString();
+      updated++;
+      console.log(`[공급처 업데이트] ${sup.name}: ${products.length}개 상품`);
+    } catch (e) { console.log(`[공급처 업데이트 실패] ${sup.name}: ${e.message}`); }
+  }
+  if (updated > 0) wj(F.suppliers, suppliers);
+  return updated;
+}
+
+// ========== 하루팜 시드 + 서버 시작 시 전체 공급처 업데이트 ==========
+(async function initSuppliers() {
+  // 하루팜 시드 (없으면 생성)
+  let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
+  if (!suppliers.find(s => s.name === '하루팜')) {
+    suppliers.push({ id: Date.now(), name: '하루팜', sheetUrl: 'https://docs.google.com/spreadsheets/d/18tbzUoRTNLa6KkJXUIcNnX2HVhpDxNNSnhdXpsodw1M/edit#gid=0', products: [], contact: 'harumart88@naver.com', phone: '', email: 'harumart88@naver.com', note: '제주 과일 전문', createdAt: new Date().toISOString() });
+    wj(F.suppliers, suppliers);
+  }
+  // 서버 시작 시 모든 공급처 업데이트
+  await refreshAllSuppliers();
+})();
+
+// 24시간마다 공급처 상품 자동 업데이트
+setInterval(async () => {
+  console.log(`[스케줄] 공급처 상품 업데이트 시작: ${new Date().toLocaleString('ko')}`);
+  await refreshAllSuppliers();
+}, 24 * 60 * 60 * 1000);
+
+// 관리자 수동 업데이트 API
+app.post('/api/admin/refresh-suppliers', async (req, res) => {
+  try {
+    const count = await refreshAllSuppliers();
+    res.json({ success: true, updated: count });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
 
 // ========== 유저 API키 ==========
 app.post('/api/user/save-keys', (req, res) => {
@@ -334,11 +427,12 @@ app.get('/api/mappings', (req, res) => {
 });
 app.post('/api/mapping/save', (req, res) => {
   let list = rj(F.mappings, []); if (!Array.isArray(list)) list = [];
-  const { userId, productName, productId, optionId, option, salePrice, supplierId, supplierName, costPrice, active } = req.body;
+  const { userId, productName, productId, optionId, option, salePrice, supplierId, supplierName, supplierOptionKey, costPrice, active } = req.body;
   if (!productId) return res.status(400).json({ success: false, message: '상품 필요' });
   const idx = list.findIndex(m => m.userId === userId && m.productId === productId);
   const entry = { userId, productName, productId, optionId, option, salePrice: parseFloat(salePrice) || 0,
-    supplierId: supplierId || '', supplierName: supplierName || '', costPrice: parseFloat(costPrice) || 0,
+    supplierId: supplierId || '', supplierName: supplierName || '', supplierOptionKey: supplierOptionKey || '',
+    costPrice: parseFloat(costPrice) || 0,
     active: active !== undefined ? active : true, updatedAt: new Date().toISOString() };
   if (idx >= 0) list[idx] = { ...list[idx], ...entry }; else list.push({ id: Date.now(), ...entry, createdAt: new Date().toISOString() });
   wj(F.mappings, list); res.json({ success: true });
@@ -398,6 +492,46 @@ app.get('/api/admin/purchase-order', (req, res) => {
     bySupplier[m.supplierId].items.push(m);
   });
   res.json({ success: true, purchaseOrder: bySupplier });
+});
+
+// ========== Google Sheets 공급처 상품 조회 ==========
+app.post('/api/supplier/fetch-sheet', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ success: false, message: 'URL 필요' });
+  try {
+    const products = await fetchSheetProducts(url);
+    res.json({ success: true, products, total: products.length });
+  } catch (e) { res.status(400).json({ success: false, message: e.message }); }
+});
+
+// 관리자: 공급처 승인 + 스프레드시트 연동
+app.post('/api/admin/supplier-request/approve', async (req, res) => {
+  const { id } = req.body;
+  let requests = rj(F.supplierRequests, []); if (!Array.isArray(requests)) requests = [];
+  const idx = requests.findIndex(r => r.id === id);
+  if (idx < 0) return res.status(404).json({ success: false, message: '요청 없음' });
+  const request = requests[idx];
+  // 스프레드시트에서 상품 가져오기
+  try {
+    const products = await fetchSheetProducts(request.url);
+    // 공급처 등록
+    let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
+    const existing = suppliers.find(s => s.name === request.name);
+    const supplierId = existing ? existing.id : Date.now();
+    if (existing) {
+      existing.sheetUrl = request.url;
+      existing.products = products;
+      existing.updatedAt = new Date().toISOString();
+    } else {
+      suppliers.push({ id: supplierId, name: request.name, sheetUrl: request.url, products, contact: '', phone: '', email: '', note: '', createdAt: new Date().toISOString() });
+    }
+    wj(F.suppliers, suppliers);
+    // 요청 상태 업데이트
+    requests[idx].status = '승인';
+    requests[idx].productCount = products.length;
+    wj(F.supplierRequests, requests);
+    res.json({ success: true, productCount: products.length });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 // ===== Start =====

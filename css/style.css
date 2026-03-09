@@ -1620,6 +1620,34 @@ body {
   border-top: 1px solid var(--gray-100);
 }
 
+/* ===== REG ROLE TABS ===== */
+.reg-role-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.reg-role-tab {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  background: var(--white);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: var(--font);
+}
+.reg-role-tab.active {
+  background: var(--blue);
+  color: white;
+}
+.reg-role-tab:not(.active):hover {
+  background: var(--gray-50);
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
