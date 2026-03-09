@@ -85,21 +85,19 @@ async function enterApp() {
   if (currentUser.role === 'admin') {
     $('app-admin').classList.remove('hidden');
     $('a-name').textContent = currentUser.company || '관리자';
-    initAdminNav(); initAdminDash(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice();
-    loadAdminDash();
+    initAdminNav(); initAdminDash(); initAdminSupReq(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice(); initAdminSettings();
+    loadAdminDash(); loadSolapiConfig();
   } else {
     $('app-seller').classList.remove('hidden');
     $('s-name').textContent = currentUser.company || currentUser.loginId;
     $('s-avatar').textContent = (currentUser.company || currentUser.loginId || 'U')[0].toUpperCase();
     $('s-sub').textContent = '셀러';
-    initSellerNav(); initSellerDash(); initProducts(); initReview(); initRvClassify(); initOrders(); initSettings(); initModal();
-    setDates();
+    initSellerNav(); initProducts(); initReview(); initRvClassify(); initSettings(); initModal();
     try {
       const d = await post('/user/load-keys', { userId: currentUser.uid });
       if (d.keys) { localStorage.setItem('sellio_api', JSON.stringify(d.keys)); $('s-vid').value = d.keys.vendorId||''; $('s-ak').value = d.keys.accessKey||''; $('s-sk').value = d.keys.secretKey||''; $('s-sub').textContent = `셀러 #${d.keys.vendorId}`; }
     } catch {}
     await loadTags(); await loadSuppliers(); await loadMappings();
-    loadSellerDash();
   }
   toast(`${currentUser.company || currentUser.loginId}님 환영합니다!`);
 }
@@ -543,13 +541,17 @@ async function loadSupReqs() {
 //  ADMIN
 // ========================================
 function initAdminDash() { $('btn-a-refresh').onclick = loadAdminDash; }
+let allSupReqs = [];
 async function loadAdminDash() {
   try {
-    const [uR, rR, sR, mR] = await Promise.all([get('/admin/users'), get('/admin/all-requests'), get('/suppliers'), get('/admin/all-mappings')]);
-    allUsers = (uR.users||[]).filter(u => u.role === 'seller'); allRequests = rR.requests||[]; allSuppliers = sR.suppliers||[]; allMappings = mR.mappings||[];
-    $('ad-sellers').innerHTML = `${allUsers.length}<small>명</small>`; $('ad-pending').innerHTML = `${allRequests.filter(r=>r.status==='대기중').length}<small>건</small>`;
-    $('ad-suppliers').innerHTML = `${allSuppliers.length}<small>개</small>`; $('ad-mappings').innerHTML = `${allMappings.length}<small>건</small>`;
-    renderAdminSellers(); renderAdminReview();
+    const [uR, rR, sR, mR, srR] = await Promise.all([get('/admin/users'), get('/admin/all-requests'), get('/suppliers'), get('/admin/all-mappings'), get('/admin/supplier-requests')]);
+    allUsers = (uR.users||[]).filter(u => u.role === 'seller'); allRequests = rR.requests||[]; allSuppliers = sR.suppliers||[]; allMappings = mR.mappings||[]; allSupReqs = srR.requests||[];
+    $('ad-sellers').innerHTML = `${allUsers.length}<small>명</small>`;
+    $('ad-sup-req').innerHTML = `${allSupReqs.filter(r=>r.status==='대기중').length}<small>건</small>`;
+    $('ad-suppliers').innerHTML = `${allSuppliers.length}<small>개</small>`;
+    $('ad-pending').innerHTML = `${allRequests.filter(r=>r.status==='대기중').length}<small>건</small>`;
+    $('ad-mappings').innerHTML = `${allMappings.length}<small>건</small>`;
+    renderAdminSellers(); renderAdminReview(); renderAdminSupReqs();
   } catch (e) { console.error(e); }
 }
 function renderAdminSellers() {
@@ -562,10 +564,67 @@ function initAdminPO() { $('btn-a-load-po').onclick = async () => {
 }; }
 function initAdminInvoice() { $('a-inv-file').onchange = async e => { const file = e.target.files[0]; if (!file) return; $('a-inv-fname').textContent = file.name; const fd = new FormData(); fd.append('file', file); try { const d = await fetchRaw(`${API}/invoice/parse-excel`, { method: 'POST', body: fd }); if (d.success&&d.data.length) { $('a-inv-result').classList.remove('hidden'); $('a-inv-result').dataset.parsed = JSON.stringify(d.data); $('a-inv-body').innerHTML = d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td>${esc(r.productName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join(''); toast(`${d.data.length}건`); } } catch { toast('파싱 실패'); } e.target.value = ''; };
   $('btn-a-apply-inv').onclick = async () => { const ps=$('a-inv-result').dataset.parsed; if (!ps) return toast('엑셀 먼저'); const parsed=JSON.parse(ps).filter(r=>r.invoiceNumber&&r.orderId); if (!parsed.length) return toast('송장 없음'); const btn=$('btn-a-apply-inv'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>'; const courier=$('a-inv-courier').value, users=await get('/admin/users'), sellers=(users.users||[]).filter(u=>u.role==='seller'&&u.hasApiKeys); let ts=0,tf=0; for (const s of sellers) { try { const d=await post('/admin/invoice-for-seller',{sellerUid:s.uid,invoices:parsed.map(r=>({shipmentBoxId:r.orderId,invoiceNumber:r.invoiceNumber,deliveryCompanyCode:courier})),deliveryCompanyCode:courier}); if(d.success){ts+=d.summary.success;tf+=d.summary.fail;} } catch{tf+=parsed.length;} } toast(`성공:${ts} 실패:${tf}`); btn.disabled=false; btn.textContent='전체 송장 등록 실행'; }; }
+let kakaoText = '';
 function initAdminReview() {
-  $('btn-a-kakao').onclick = async () => { try { const d = await get('/review/export'); if (d.success&&d.text&&d.count) { copyToClipboard(d.text); $('a-kakao-box').classList.remove('hidden'); $('a-kakao-box').innerHTML = `<pre style="white-space:pre-wrap;font-size:13px;line-height:1.8">${esc(d.text)}</pre>`; toast(`${d.count}건 카톡 복사!`); } else toast('대기중 없음'); } catch { toast('실패'); } };
-  $('btn-a-sent').onclick = async () => { const p = allRequests.filter(r=>r.status==='대기중'); if (!p.length) return toast('대기중 없음'); for (const rq of p) try { await post('/review/update-status', { id: rq.id, status: '진행중' }); } catch {} toast(`${p.length}건 진행중`); await loadAdminDash(); };
-  $('a-rv-chips').onclick = e => { const c=e.target.closest('.chip'); if (!c) return; document.querySelectorAll('#a-rv-chips .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); adminReqFilter=c.dataset.s; renderAdminReview(); };
+  // 양식 복사
+  $('btn-a-kakao').onclick = async () => {
+    try {
+      const d = await get('/review/export');
+      if (d.success && d.text && d.count) {
+        kakaoText = d.text;
+        copyToClipboard(d.text);
+        $('a-kakao-box').classList.remove('hidden');
+        $('a-kakao-box').innerHTML = `<pre style="white-space:pre-wrap;font-size:13px;line-height:1.8">${esc(d.text)}</pre>`;
+        toast(`${d.count}건 카톡 복사!`);
+      } else toast('대기중 없음');
+    } catch { toast('실패'); }
+  };
+  // 카톡 발송 패널 열기
+  $('btn-a-kakao-send').onclick = async () => {
+    try {
+      const d = await get('/review/export');
+      if (!d.success || !d.text || !d.count) return toast('대기중인 체험단 신청이 없습니다');
+      kakaoText = d.text;
+      $('a-kakao-text').value = d.text;
+      $('a-kakao-send-panel').classList.remove('hidden');
+    } catch { toast('실패'); }
+  };
+  // 닫기
+  $('btn-a-kakao-cancel').onclick = () => $('a-kakao-send-panel').classList.add('hidden');
+  // 발송 실행
+  $('btn-a-kakao-confirm').onclick = async () => {
+    const to = $('a-kakao-to').value.trim();
+    const text = $('a-kakao-text').value.trim();
+    const type = $('a-kakao-type').value;
+    if (!to) return toast('수신번호를 입력해주세요');
+    if (!text) return toast('발송 내용이 없습니다');
+    const btn = $('btn-a-kakao-confirm');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 발송 중...';
+    try {
+      const d = await post('/admin/solapi/send', { to, text, type });
+      if (d.success) {
+        toast('발송 완료!');
+        $('a-kakao-send-panel').classList.add('hidden');
+      } else {
+        toast('발송 실패: ' + (d.message || ''));
+      }
+    } catch { toast('서버 연결 실패'); }
+    btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg> 발송하기';
+  };
+  // 전달완료 처리
+  $('btn-a-sent').onclick = async () => {
+    const p = allRequests.filter(r => r.status === '대기중');
+    if (!p.length) return toast('대기중 없음');
+    for (const rq of p) try { await post('/review/update-status', { id: rq.id, status: '진행중' }); } catch {}
+    toast(`${p.length}건 진행중`);
+    await loadAdminDash();
+  };
+  // 필터
+  $('a-rv-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#a-rv-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); adminReqFilter = c.dataset.s; renderAdminReview();
+  };
 }
 function renderAdminReview() {
   const f = adminReqFilter==='all' ? allRequests : allRequests.filter(r=>r.status===adminReqFilter);
@@ -575,6 +634,104 @@ function renderAdminReview() {
 function initAdminRvInvoice() {
   $('a-rvinv-file').onchange = async e => { const file=e.target.files[0]; if (!file) return; $('a-rvinv-fname').textContent=file.name; const fd=new FormData(); fd.append('file',file); try { const d=await fetchRaw(`${API}/invoice/parse-excel`,{method:'POST',body:fd}); if(d.success&&d.data.length){$('a-rvinv-result').classList.remove('hidden');$('a-rvinv-result').dataset.parsed=JSON.stringify(d.data);$('a-rvinv-body').innerHTML=d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join('');toast(`${d.data.length}건`);} }catch{toast('파싱 실패');} e.target.value=''; };
   $('btn-a-apply-rvinv').onclick = async () => { const ps=$('a-rvinv-result').dataset.parsed; if(!ps) return toast('엑셀 먼저'); const parsed=JSON.parse(ps).filter(r=>r.invoiceNumber&&r.orderId); if(!parsed.length) return toast('송장 없음'); const btn=$('btn-a-apply-rvinv'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>'; const courier=$('a-rvinv-courier').value,users=await get('/admin/users'),sellers=(users.users||[]).filter(u=>u.role==='seller'&&u.hasApiKeys); let ts=0,tf=0; for(const s of sellers){try{const d=await post('/admin/invoice-for-seller',{sellerUid:s.uid,invoices:parsed.map(r=>({shipmentBoxId:r.orderId,invoiceNumber:r.invoiceNumber,deliveryCompanyCode:courier})),deliveryCompanyCode:courier});if(d.success){ts+=d.summary.success;tf+=d.summary.fail;}}catch{tf+=parsed.length;}} toast(`체험단 송장: 성공${ts} 실패${tf}`); btn.disabled=false; btn.textContent='체험단 송장 등록 실행'; };
+}
+
+// ========================================
+//  ADMIN: 설정 (솔라피)
+// ========================================
+function initAdminSettings() {
+  $('btn-a-sol-save').onclick = async () => {
+    const apiKey = $('a-sol-key').value.trim();
+    const apiSecret = $('a-sol-secret').value.trim();
+    const senderNumber = $('a-sol-sender').value.trim();
+    const pfId = $('a-sol-pfid').value.trim();
+    if (!apiKey || !apiSecret) return toast('API Key, API Secret 필요');
+    if (!senderNumber) return toast('발신번호 필요');
+    const btn = $('btn-a-sol-save'); btn.disabled = true; btn.textContent = '저장 중...';
+    try {
+      const d = await post('/admin/solapi/save-config', { apiKey, apiSecret, senderNumber, pfId });
+      const msg = $('a-sol-msg');
+      if (d.success) {
+        msg.className = 'api-status success'; msg.textContent = '솔라피 설정 저장 완료!';
+      } else {
+        msg.className = 'api-status error'; msg.textContent = d.message || '저장 실패';
+      }
+      msg.classList.remove('hidden');
+    } catch { toast('서버 연결 실패'); }
+    btn.disabled = false; btn.textContent = '저장';
+  };
+  $('btn-a-sol-test').onclick = async () => {
+    const sender = $('a-sol-sender').value.trim();
+    if (!sender) return toast('발신번호를 먼저 입력해주세요');
+    const to = prompt('테스트 수신번호를 입력하세요:', sender);
+    if (!to) return;
+    const btn = $('btn-a-sol-test'); btn.disabled = true; btn.textContent = '발송 중...';
+    try {
+      const d = await post('/admin/solapi/send', { to, text: '[Sellio] 솔라피 연동 테스트 메시지입니다.', type: 'LMS' });
+      const msg = $('a-sol-msg');
+      if (d.success) {
+        msg.className = 'api-status success'; msg.textContent = '테스트 발송 성공!';
+      } else {
+        msg.className = 'api-status error'; msg.textContent = '발송 실패: ' + (d.message || '');
+      }
+      msg.classList.remove('hidden');
+    } catch { toast('서버 연결 실패'); }
+    btn.disabled = false; btn.textContent = '테스트 발송';
+  };
+}
+async function loadSolapiConfig() {
+  try {
+    const d = await get('/admin/solapi/config');
+    if (d.success && d.config) {
+      if (d.config.apiKey) $('a-sol-key').value = d.config.apiKey;
+      if (d.config.senderNumber) $('a-sol-sender').value = d.config.senderNumber;
+      if (d.config.pfId) $('a-sol-pfid').value = d.config.pfId;
+      if (d.config.configured) {
+        $('a-sol-secret').placeholder = '설정됨 (변경 시 재입력)';
+      }
+    }
+  } catch {}
+}
+
+// ========================================
+//  ADMIN: 공급처 등록요청
+// ========================================
+let supReqFilter = 'all';
+function initAdminSupReq() {
+  $('btn-a-sup-refresh').onclick = async () => { await loadAdminDash(); toast('새로고침 완료'); };
+  $('a-sup-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#a-sup-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); supReqFilter = c.dataset.s; renderAdminSupReqs();
+  };
+}
+function renderAdminSupReqs() {
+  const f = supReqFilter === 'all' ? allSupReqs : allSupReqs.filter(r => r.status === supReqFilter);
+  const bc = s => s === '대기중' ? 'orange' : s === '승인' ? 'green' : s === '거절' ? 'red' : 'blue';
+  $('a-sup-body').innerHTML = f.length ? f.map(r => `<tr>
+    <td>${esc(r.seller || '-')}</td>
+    <td><strong>${esc(r.name)}</strong></td>
+    <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="${esc(r.url)}" target="_blank" style="color:var(--blue);text-decoration:none;font-size:13px">${esc(r.url||'-')}</a></td>
+    <td style="text-align:center">${r.productCount || '-'}</td>
+    <td><span class="badge ${bc(r.status)}">${esc(r.status)}</span></td>
+    <td>${r.createdAt ? new Date(r.createdAt).toLocaleDateString('ko') : '-'}</td>
+    <td>${r.status === '대기중' ? `<div class="btn-row"><button class="btn-primary" style="padding:6px 14px;font-size:12px" onclick="approveSupReq(${r.id})">승인</button><button class="btn-danger-sm" onclick="rejectSupReq(${r.id})">거절</button></div>` : ''}</td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty"><p>공급처 등록요청이 없습니다</p></td></tr>';
+}
+async function approveSupReq(id) {
+  if (!confirm('이 공급처를 승인하시겠습니까?\n승인하면 스프레드시트에서 상품을 가져옵니다.')) return;
+  try {
+    const d = await post('/admin/supplier-request/approve', { id });
+    if (d.success) { toast(`승인 완료! 상품 ${d.productCount}개 등록`); await loadAdminDash(); }
+    else toast(d.message || '승인 실패');
+  } catch { toast('서버 오류'); }
+}
+async function rejectSupReq(id) {
+  if (!confirm('이 공급처 요청을 거절하시겠습니까?')) return;
+  try {
+    const d = await post('/admin/supplier-request/update', { id, status: '거절' });
+    if (d.success) { toast('거절 처리 완료'); await loadAdminDash(); }
+  } catch { toast('서버 오류'); }
 }
 
 // ========================================

@@ -534,5 +534,113 @@ app.post('/api/admin/supplier-request/approve', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+// ========== 솔라피 (Solapi) 카카오톡 발송 ==========
+function solapiAuth(apiKey, apiSecret) {
+  const date = new Date().toISOString();
+  const salt = crypto.randomBytes(32).toString('hex');
+  const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex');
+  return `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`;
+}
+
+// 솔라피 설정 저장/조회
+app.post('/api/admin/solapi/save-config', (req, res) => {
+  const { apiKey, apiSecret, pfId, senderNumber } = req.body;
+  if (!apiKey || !apiSecret) return res.status(400).json({ success: false, message: 'API Key, API Secret 필요' });
+  const config = rj(F.config, {});
+  config.solapi = { apiKey, apiSecret, pfId: pfId || '', senderNumber: senderNumber || '' };
+  wj(F.config, config);
+  console.log('[솔라피] 설정 저장 완료');
+  res.json({ success: true });
+});
+
+app.get('/api/admin/solapi/config', (req, res) => {
+  const config = rj(F.config, {});
+  const s = config.solapi || {};
+  res.json({ success: true, config: { apiKey: s.apiKey ? '****' + s.apiKey.slice(-4) : '', apiSecret: s.apiSecret ? '설정됨' : '', pfId: s.pfId || '', senderNumber: s.senderNumber || '', configured: !!(s.apiKey && s.apiSecret) } });
+});
+
+// 솔라피 메시지 발송
+app.post('/api/admin/solapi/send', async (req, res) => {
+  const { to, text, type } = req.body;
+  if (!to || !text) return res.status(400).json({ success: false, message: '수신번호와 메시지 필요' });
+  const config = rj(F.config, {});
+  const s = config.solapi;
+  if (!s?.apiKey || !s?.apiSecret) return res.status(400).json({ success: false, message: '솔라피 API 설정을 먼저 해주세요' });
+  if (!s.senderNumber) return res.status(400).json({ success: false, message: '발신번호를 설정해주세요' });
+
+  const auth = solapiAuth(s.apiKey, s.apiSecret);
+  // 수신번호 정리 (하이픈 제거)
+  const cleanTo = to.replace(/-/g, '').trim();
+
+  // 메시지 타입 결정: 카카오 친구톡(CTA) > LMS > SMS
+  let msgType = type || 'LMS';
+  const msgBody = {
+    message: {
+      to: cleanTo,
+      from: s.senderNumber.replace(/-/g, ''),
+      text: text,
+    }
+  };
+
+  // 카카오 친구톡 사용 시
+  if (msgType === 'CTA' && s.pfId) {
+    msgBody.message.type = 'CTA';
+    msgBody.message.kakaoOptions = { pfId: s.pfId, disableSms: false };
+  } else {
+    // LMS (장문) - 80바이트 초과 시 자동 LMS
+    msgBody.message.type = text.length > 45 ? 'LMS' : 'SMS';
+    msgBody.message.subject = '체험단 신청 안내';
+  }
+
+  try {
+    const result = await axios.post('https://api.solapi.com/messages/v4/send', msgBody, {
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      timeout: 15000
+    });
+    console.log(`[솔라피] 발송 성공: ${cleanTo}`);
+    res.json({ success: true, result: result.data });
+  } catch (e) {
+    const errMsg = e.response?.data?.errorMessage || e.response?.data?.message || e.message;
+    console.error(`[솔라피] 발송 실패: ${errMsg}`);
+    res.status(400).json({ success: false, message: errMsg });
+  }
+});
+
+// 솔라피 다건 발송 (여러 번호로 동시 발송)
+app.post('/api/admin/solapi/send-bulk', async (req, res) => {
+  const { recipients, text, type } = req.body;
+  if (!recipients?.length || !text) return res.status(400).json({ success: false, message: '수신 목록과 메시지 필요' });
+  const config = rj(F.config, {});
+  const s = config.solapi;
+  if (!s?.apiKey || !s?.apiSecret || !s.senderNumber) return res.status(400).json({ success: false, message: '솔라피 설정 필요' });
+
+  const auth = solapiAuth(s.apiKey, s.apiSecret);
+  const from = s.senderNumber.replace(/-/g, '');
+  const messages = recipients.map(r => {
+    const msg = { to: r.replace(/-/g, '').trim(), from, text };
+    if (type === 'CTA' && s.pfId) {
+      msg.type = 'CTA';
+      msg.kakaoOptions = { pfId: s.pfId, disableSms: false };
+    } else {
+      msg.type = text.length > 45 ? 'LMS' : 'SMS';
+      msg.subject = '체험단 신청 안내';
+    }
+    return msg;
+  });
+
+  try {
+    const result = await axios.post('https://api.solapi.com/messages/v4/send-many', { messages }, {
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+    console.log(`[솔라피] ${recipients.length}건 다건 발송`);
+    res.json({ success: true, result: result.data });
+  } catch (e) {
+    const errMsg = e.response?.data?.errorMessage || e.response?.data?.message || e.message;
+    console.error(`[솔라피] 다건 발송 실패: ${errMsg}`);
+    res.status(400).json({ success: false, message: errMsg });
+  }
+});
+
 // ===== Start =====
 app.listen(PORT, () => console.log(`\n  Sellio 서버: http://localhost:${PORT}\n`));

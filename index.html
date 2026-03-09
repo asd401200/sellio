@@ -66,10 +66,8 @@
         <span>Sellio</span>
       </div>
       <div class="nav-section">
-        <a href="#" class="nav-item active" data-page="s-dash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>대시보드</span></a>
-        <a href="#" class="nav-item" data-page="s-products"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품관리</span></a>
+        <a href="#" class="nav-item active" data-page="s-products"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품관리</span></a>
         <a href="#" class="nav-item" data-page="s-review"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg><span>체험단</span></a>
-        <a href="#" class="nav-item" data-page="s-orders"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg><span>쿠팡 주문</span></a>
         <a href="#" class="nav-item" data-page="s-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>설정</span></a>
       </div>
       <div class="sidebar-footer">
@@ -79,23 +77,8 @@
     </aside>
 
     <main class="main">
-      <!-- ===== 대시보드 ===== -->
-      <section id="page-s-dash" class="page active">
-        <div class="page-top"><div></div><button class="btn-primary" id="btn-s-dash-refresh">새로고침</button></div>
-        <div class="stat-grid">
-          <div class="stat-card"><span class="stat-label">결제완료</span><span class="stat-value" id="sd-accept">-</span></div>
-          <div class="stat-card"><span class="stat-label">상품준비중</span><span class="stat-value" id="sd-instruct">-</span></div>
-          <div class="stat-card"><span class="stat-label">배송중</span><span class="stat-value" id="sd-delivering">-</span></div>
-          <div class="stat-card"><span class="stat-label">배송완료</span><span class="stat-value" id="sd-delivered">-</span></div>
-        </div>
-        <div class="stat-grid" style="margin-top:12px">
-          <div class="stat-card"><span class="stat-label">체험단 신청</span><span class="stat-value" id="sd-review">-</span></div>
-          <div class="stat-card"><span class="stat-label">매핑 상품</span><span class="stat-value" id="sd-mapped">-</span></div>
-        </div>
-      </section>
-
       <!-- ===== 상품관리 ===== -->
-      <section id="page-s-products" class="page">
+      <section id="page-s-products" class="page active">
         <div class="page-top"><div></div><button class="btn-primary" id="btn-s-fetch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 상품 가져오기</button></div>
         <div class="card">
           <div class="card-header">
@@ -157,20 +140,6 @@
         </div>
       </section>
 
-      <!-- ===== 쿠팡 주문 ===== -->
-      <section id="page-s-orders" class="page">
-        <div class="page-top">
-          <div></div>
-          <div class="page-top-actions">
-            <input type="date" id="s-from" class="input-sm"> ~ <input type="date" id="s-to" class="input-sm">
-            <select id="s-status" class="input-sm"><option value="INSTRUCT" selected>상품준비중</option><option value="ALL">전체</option><option value="ACCEPT">결제완료</option><option value="DELIVERING">배송중</option><option value="FINAL_DELIVERY">배송완료</option></select>
-            <button class="btn-primary" id="btn-s-orders">조회</button>
-          </div>
-        </div>
-        <div class="filter-chips" id="s-order-chips"><button class="chip active" data-t="all">전체</button><button class="chip" data-t="review">체험단</button><button class="chip" data-t="real">실주문</button></div>
-        <div class="card" style="margin-top:16px"><table class="tbl"><thead><tr><th>구분</th><th>주문번호</th><th>상품명</th><th>옵션</th><th>수량</th><th>수령인</th><th>주문일</th><th>상태</th></tr></thead><tbody id="s-orders-body"></tbody></table></div>
-      </section>
-
       <!-- ===== 설정 ===== -->
       <section id="page-s-settings" class="page">
         <div class="sub-tabs">
@@ -219,10 +188,12 @@
       <div class="nav-section">
         <a href="#" class="nav-item active" data-page="a-dash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>대시보드</span></a>
         <a href="#" class="nav-item" data-page="a-sellers"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>셀러 관리</span></a>
+        <a href="#" class="nav-item" data-page="a-sup-req"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>공급처 등록요청</span></a>
         <a href="#" class="nav-item" data-page="a-po"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg><span>통합 발주서</span></a>
         <a href="#" class="nav-item" data-page="a-invoice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2"/></svg><span>송장 일괄 등록</span></a>
         <a href="#" class="nav-item" data-page="a-review"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>체험단 취합 / 카톡</span></a>
         <a href="#" class="nav-item" data-page="a-rv-invoice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/></svg><span>체험단 송장</span></a>
+        <a href="#" class="nav-item" data-page="a-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>설정</span></a>
       </div>
       <div class="sidebar-footer">
         <div class="user-pill"><div class="user-avatar-circle" style="background:var(--red)">A</div><div class="user-meta"><span class="user-name" id="a-name">관리자</span><span class="user-sub">Admin</span></div></div>
@@ -234,13 +205,32 @@
         <div class="page-top"><div><h1 class="page-title">관리자 대시보드</h1></div><button class="btn-primary" id="btn-a-refresh">새로고침</button></div>
         <div class="stat-grid">
           <div class="stat-card"><span class="stat-label">등록 셀러</span><span class="stat-value" id="ad-sellers">-</span></div>
-          <div class="stat-card"><span class="stat-label">체험단 대기</span><span class="stat-value" id="ad-pending">-</span></div>
+          <div class="stat-card"><span class="stat-label">공급처 요청</span><span class="stat-value" id="ad-sup-req">-</span></div>
           <div class="stat-card"><span class="stat-label">등록 공급처</span><span class="stat-value" id="ad-suppliers">-</span></div>
+          <div class="stat-card"><span class="stat-label">체험단 대기</span><span class="stat-value" id="ad-pending">-</span></div>
+        </div>
+        <div class="stat-grid" style="margin-top:16px">
           <div class="stat-card"><span class="stat-label">상품 매핑</span><span class="stat-value" id="ad-mappings">-</span></div>
         </div>
       </section>
       <section id="page-a-sellers" class="page">
+        <div class="page-top"><div><h1 class="page-title">셀러 관리</h1></div></div>
         <div class="card"><table class="tbl"><thead><tr><th>아이디</th><th>회사명</th><th>대표자</th><th>휴대폰</th><th>이메일</th><th>Vendor ID</th><th>API</th><th>가입일</th></tr></thead><tbody id="a-sellers-body"></tbody></table></div>
+      </section>
+      <section id="page-a-sup-req" class="page">
+        <div class="page-top"><div><h1 class="page-title">공급처 등록요청</h1><p class="page-desc">셀러가 요청한 공급처를 확인하고 승인합니다</p></div><button class="btn-primary" id="btn-a-sup-refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 새로고침</button></div>
+        <div class="filter-chips" id="a-sup-chips">
+          <button class="chip active" data-s="all">전체</button>
+          <button class="chip" data-s="대기중">대기중</button>
+          <button class="chip" data-s="승인">승인</button>
+          <button class="chip" data-s="거절">거절</button>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <table class="tbl">
+            <thead><tr><th>요청 셀러</th><th>공급처명</th><th style="min-width:200px">스프레드시트 URL</th><th>상품 수</th><th>상태</th><th>요청일</th><th style="width:160px">관리</th></tr></thead>
+            <tbody id="a-sup-body"></tbody>
+          </table>
+        </div>
       </section>
       <section id="page-a-po" class="page">
         <div class="page-top"><div></div><button class="btn-primary" id="btn-a-load-po">발주서 생성</button></div>
@@ -260,15 +250,45 @@
         </div>
       </section>
       <section id="page-a-review" class="page">
-        <div class="page-top"><div></div>
-          <div class="btn-row"><button class="btn-outline" id="btn-a-kakao">카톡 양식 복사</button><button class="btn-primary" id="btn-a-sent">전달완료 처리</button></div></div>
+        <div class="page-top">
+          <div><h1 class="page-title">체험단 취합 / 카톡</h1></div>
+          <div class="btn-row">
+            <button class="btn-outline" id="btn-a-kakao"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> 양식 복사</button>
+            <button class="btn-primary" id="btn-a-kakao-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg> 카톡 발송</button>
+            <button class="btn-outline" id="btn-a-sent">전달완료 처리</button>
+          </div>
+        </div>
         <div class="filter-chips" id="a-rv-chips"><button class="chip active" data-s="all">전체</button><button class="chip" data-s="대기중">대기중</button><button class="chip" data-s="진행중">진행중</button><button class="chip" data-s="완료">완료</button></div>
+        <!-- 카톡 발송 패널 -->
+        <div class="card hidden" id="a-kakao-send-panel" style="margin-top:16px">
+          <div style="padding:20px 24px">
+            <h3 style="font-size:15px;font-weight:700;margin-bottom:16px">카카오톡 발송</h3>
+            <div class="form-grid">
+              <div class="field"><label>수신번호 <span class="req">*</span></label><input type="tel" id="a-kakao-to" placeholder="010-0000-0000"></div>
+              <div class="field"><label>발송 방식</label>
+                <select id="a-kakao-type" class="input-sm" style="width:100%;padding:12px 14px">
+                  <option value="LMS">문자 (LMS)</option>
+                  <option value="CTA">카카오 친구톡</option>
+                </select>
+              </div>
+            </div>
+            <div class="field full" style="margin-top:12px">
+              <label>발송 내용 (대기중 자동 생성)</label>
+              <textarea id="a-kakao-text" style="width:100%;height:200px;padding:14px;border:1px solid var(--gray-200);border-radius:8px;font-family:var(--font);font-size:13px;line-height:1.7;resize:vertical" readonly></textarea>
+            </div>
+            <div class="btn-row" style="margin-top:16px;justify-content:flex-end">
+              <button class="btn-outline" id="btn-a-kakao-cancel">닫기</button>
+              <button class="btn-primary" id="btn-a-kakao-confirm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22,2 15,22 11,13 2,9"/></svg> 발송하기</button>
+            </div>
+          </div>
+        </div>
         <div class="card" style="margin-top:16px">
           <div class="kakao-preview hidden" id="a-kakao-box"></div>
           <table class="tbl"><thead><tr><th>신청자</th><th>상품명</th><th>키워드</th><th>총건수</th><th>일건수</th><th>상태</th><th>신청일</th></tr></thead><tbody id="a-rv-body"></tbody></table>
         </div>
       </section>
       <section id="page-a-rv-invoice" class="page">
+        <div class="page-top"><div><h1 class="page-title">체험단 송장</h1></div></div>
         <div class="card">
           <div class="invoice-toolbar">
             <label class="btn-outline file-btn">체험단 송장 엑셀<input type="file" accept=".xlsx,.xls,.csv" id="a-rvinv-file" hidden></label>
@@ -279,6 +299,30 @@
             <table class="tbl"><thead><tr><th>셀러</th><th>주문번호</th><th>송장번호</th><th>결과</th></tr></thead><tbody id="a-rvinv-body"></tbody></table>
             <button class="btn-primary btn-lg" id="btn-a-apply-rvinv" style="margin:16px 24px;width:calc(100% - 48px)">체험단 송장 등록 실행</button>
           </div>
+        </div>
+      </section>
+      <section id="page-a-settings" class="page">
+        <div class="page-top"><div><h1 class="page-title">설정</h1></div></div>
+        <div class="card form-card-lg">
+          <h3 style="font-size:16px;font-weight:700;margin-bottom:8px">솔라피 (Solapi) 연동</h3>
+          <p style="font-size:13px;color:var(--gray-500);margin-bottom:24px">체험단 신청 내용을 카카오톡/문자로 자동 발송합니다</p>
+          <div class="api-guide" style="margin-bottom:24px">
+            <div class="guide-step"><span class="step-num">1</span><div><strong>솔라피 가입</strong><p>solapi.com 가입 후 API Key 발급</p></div></div>
+            <div class="guide-step"><span class="step-num">2</span><div><strong>발신번호 등록</strong><p>솔라피에서 발신번호 인증</p></div></div>
+            <div class="guide-step"><span class="step-num">3</span><div><strong>카카오톡 채널 (선택)</strong><p>친구톡 발송 시 카카오 비즈니스 채널 연동</p></div></div>
+          </div>
+          <div class="form-divider"></div>
+          <div class="form-grid" style="margin-top:24px">
+            <div class="field full"><label>API Key <span class="req">*</span></label><input type="text" id="a-sol-key" placeholder="NCSA..."></div>
+            <div class="field full"><label>API Secret <span class="req">*</span></label><input type="password" id="a-sol-secret" placeholder="API Secret"></div>
+            <div class="field"><label>발신번호 <span class="req">*</span></label><input type="tel" id="a-sol-sender" placeholder="010-0000-0000"></div>
+            <div class="field"><label>카카오 채널 ID (선택)</label><input type="text" id="a-sol-pfid" placeholder="KA01PF..."></div>
+          </div>
+          <div class="btn-row" style="margin-top:24px">
+            <button class="btn-outline" id="btn-a-sol-test">테스트 발송</button>
+            <button class="btn-primary" id="btn-a-sol-save">저장</button>
+          </div>
+          <div class="api-status hidden" id="a-sol-msg"></div>
         </div>
       </section>
     </main>
