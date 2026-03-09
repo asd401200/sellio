@@ -175,6 +175,17 @@ body {
   font-weight: 700;
 }
 
+/* Login tabs */
+.login-tabs { display: flex; border-bottom: 2px solid var(--gray-200); margin-bottom: 20px; }
+.login-tab { flex: 1; padding: 12px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--gray-400); cursor: pointer; transition: var(--transition); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.login-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.login-tab:hover:not(.active) { color: var(--gray-600); }
+/* Sub-tabs */
+.sub-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--gray-200); margin-bottom: 0; }
+.sub-tab { padding: 12px 24px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--gray-400); cursor: pointer; transition: var(--transition); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.sub-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.sub-tab:hover:not(.active) { color: var(--gray-600); }
+
 .role-select {
   display: flex;
   gap: 12px;

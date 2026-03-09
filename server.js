@@ -26,11 +26,11 @@ const F = {
   supplierRequests: 'data/supplier_requests.json',
 };
 Object.values(F).forEach(f => {
-  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') ? '[]' : '{}');
+  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') ? '[]' : '{}', 'utf8');
 });
 
 const rj = (file, fb) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fb; } };
-const wj = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+const wj = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 const hash = pw => crypto.createHash('sha256').update(pw + 'sellio_2026').digest('hex');
 
 // ===== Multer =====
@@ -56,8 +56,8 @@ const cpnPut = (u, body, sk, ak, vid) => axios.put(`https://${CPN}${u}`, body, {
 // ========== 회원가입 ==========
 app.post('/api/auth/register', (req, res) => {
   const { loginId, password, password2, role, company, ceo, mobile, email } = req.body;
-  if (!loginId || loginId.length < 4) return res.status(400).json({ success: false, message: '아이디 4자 이상' });
-  if (!password || password.length < 8) return res.status(400).json({ success: false, message: '비밀번호 8자 이상' });
+  if (!loginId) return res.status(400).json({ success: false, message: '아이디 입력' });
+  if (!password) return res.status(400).json({ success: false, message: '비밀번호 입력' });
   if (password !== password2) return res.status(400).json({ success: false, message: '비밀번호 불일치' });
   if (!company) return res.status(400).json({ success: false, message: '회사명/이름 입력' });
   if (!mobile) return res.status(400).json({ success: false, message: '휴대폰 입력' });
@@ -79,17 +79,35 @@ app.post('/api/auth/register', (req, res) => {
 
 // ========== 로그인 ==========
 app.post('/api/auth/login', (req, res) => {
-  const { loginId, password } = req.body;
+  const { loginId, password, role } = req.body;
   if (!loginId || !password) return res.status(400).json({ success: false, message: '입력 필요' });
   const users = rj(F.users, {});
   const h = hash(password);
   const entry = Object.entries(users).find(([_, u]) => u.loginId === loginId && u.passwordHash === h);
   if (!entry) return res.status(401).json({ success: false, message: '아이디 또는 비밀번호 오류' });
   const [uid, data] = entry;
+  // 로그인 유형 체크
+  if (role && data.role !== role) return res.status(403).json({ success: false, message: role === 'admin' ? '관리자 계정이 아닙니다' : '셀러 계정이 아닙니다' });
   data.lastLogin = new Date().toISOString();
   wj(F.users, users);
   res.json({ success: true, user: { uid, loginId: data.loginId, role: data.role, company: data.company, ceo: data.ceo, mobile: data.mobile, email: data.email } });
 });
+
+// ========== 기본 계정 시드 ==========
+(function seedAccounts() {
+  const users = rj(F.users, {});
+  const hasAdmin = Object.values(users).some(u => u.loginId === '1234' && u.role === 'admin');
+  const hasSeller = Object.values(users).some(u => u.loginId === 'seller' && u.role === 'seller');
+  if (!hasAdmin) {
+    users['u_admin_seed'] = { loginId: '1234', passwordHash: hash('1234'), role: 'admin', company: 'Sellio 관리자', ceo: '관리자', mobile: '010-0000-0000', email: 'admin@sellio.kr', createdAt: new Date().toISOString() };
+    console.log('[시드] 관리자 계정 생성: 1234 / 1234');
+  }
+  if (!hasSeller) {
+    users['u_seller_seed'] = { loginId: 'seller', passwordHash: hash('1234'), role: 'seller', company: '테스트셀러', ceo: '홍길동', mobile: '010-1234-5678', email: 'seller@test.com', createdAt: new Date().toISOString() };
+    console.log('[시드] 셀러 계정 생성: seller / 1234');
+  }
+  if (!hasAdmin || !hasSeller) wj(F.users, users);
+})();
 
 // ========== 유저 API키 ==========
 app.post('/api/user/save-keys', (req, res) => {
@@ -234,17 +252,18 @@ app.post('/api/invoice/parse-excel', excelUpload.single('file'), (req, res) => {
 });
 
 // ========== 체험단 ==========
-app.post('/api/review/apply', imgUpload.single('productImage'), (req, res) => {
+app.post('/api/review/apply', (req, res) => {
   try {
     const b = req.body;
     const rq = {
       id: Date.now(), userId: b.userId || '', seller: b.seller || '', sellerEmail: b.sellerEmail || '',
       productName: b.productName || '', keyword: b.keyword || '', productUrl: b.productUrl || '',
       purchaseOption: b.purchaseOption || '', totalCount: parseInt(b.totalCount) || 0, dailyCount: parseInt(b.dailyCount) || 0,
-      requestTime: b.requestTime || '상관없음', photoReview: b.photoReview === 'true' ? '유' : '무',
-      reviewGuide: b.reviewGuide || 'X', paymentProxy: b.paymentProxy === 'true' ? 'Y' : 'N',
-      deliveryProxy: b.deliveryProxy === 'true' ? 'Y' : 'N', weekend: b.weekend === 'true' ? 'O' : 'X',
-      productImage: req.file ? `/uploads/${req.file.filename}` : null,
+      requestTime: b.requestTime || '상관없음', photoReview: b.photoReview === true || b.photoReview === 'true' ? '유' : '무',
+      reviewGuide: b.reviewGuide || 'X', paymentProxy: b.paymentProxy === true || b.paymentProxy === 'true' ? 'Y' : 'N',
+      deliveryProxy: b.deliveryProxy === true || b.deliveryProxy === 'true' ? 'Y' : 'N',
+      weekend: b.weekend === true || b.weekend === 'true' ? 'O' : 'X',
+      productImage: null,
       status: '대기중', createdAt: new Date().toISOString(),
     };
     let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
