@@ -66,9 +66,14 @@
         <span>Sellio</span>
       </div>
       <div class="nav-section">
-        <a href="#" class="nav-item active" data-page="s-products"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품관리</span></a>
+        <a href="#" class="nav-item active" data-page="s-orders"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><span>주문 관리</span></a>
+        <a href="#" class="nav-item" data-page="s-products"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품관리</span></a>
         <a href="#" class="nav-item" data-page="s-review"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 14l2 2 4-4"/></svg><span>체험단</span></a>
+        <a href="#" class="nav-item" data-page="s-deposit"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span>예치금</span></a>
         <a href="#" class="nav-item" data-page="s-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>설정</span></a>
+        <div class="nav-divider"></div>
+        <span class="nav-label">공급처</span>
+        <a href="#" class="nav-item" data-page="s-ws-catalog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품 카탈로그</span></a>
       </div>
       <div class="sidebar-footer">
         <div class="user-pill"><div class="user-avatar-circle" id="s-avatar">U</div><div class="user-meta"><span class="user-name" id="s-name">셀러</span><span class="user-sub" id="s-sub">셀러</span></div></div>
@@ -78,7 +83,7 @@
 
     <main class="main">
       <!-- ===== 상품관리 ===== -->
-      <section id="page-s-products" class="page active">
+      <section id="page-s-products" class="page">
         <div class="page-top"><div></div><button class="btn-primary" id="btn-s-fetch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 상품 가져오기</button></div>
         <div class="card">
           <div class="card-header">
@@ -178,6 +183,121 @@
           </div>
         </div>
       </section>
+
+      <!-- ===== 주문 관리 ===== -->
+      <section id="page-s-orders" class="page active">
+        <!-- 발주 스케줄 안내 -->
+        <div class="info-banner" style="margin-bottom:16px;background:#f0f7ff;border-left:4px solid var(--blue)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span><strong>발주 스케줄:</strong> 매일 08:30 / 09:10 주문 수합 → 18:00 송장 배포 &nbsp;|&nbsp; 공급취소 안내는 발주 당일 오전 중 전달됩니다</span>
+        </div>
+        <div class="page-top">
+          <div><h1 class="page-title">주문 관리</h1><p class="page-desc">쿠팡 주문 및 공급 상태 관리</p></div>
+          <div class="btn-row">
+            <button class="btn-danger hidden" id="btn-s-ord-bulk-reorder" style="background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>일괄 재발주 (<span id="s-ord-checked-count">0</span>건)</button>
+            <button class="btn-primary" id="btn-s-ord-fetch"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 주문 불러오기</button>
+          </div>
+        </div>
+        <!-- 공급 상태 필터 (주요) -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap">공급상태</span>
+          <div class="filter-chips" id="s-supply-chips" style="margin-bottom:0">
+            <button class="chip active" data-s="all">전체</button>
+            <button class="chip" data-s="미발주">미발주</button>
+            <button class="chip" data-s="발주완료" style="color:var(--green)">발주완료 ●</button>
+            <button class="chip" data-s="공급취소" style="color:var(--red)">공급취소 ●</button>
+            <button class="chip" data-s="재발주완료" style="color:var(--blue)">재발주완료</button>
+          </div>
+        </div>
+        <!-- 쿠팡 상태 필터 (보조) -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+          <span style="font-size:12px;font-weight:600;color:var(--gray-500);white-space:nowrap">쿠팡상태</span>
+          <div class="filter-chips" id="s-ord-chips" style="margin-bottom:0">
+            <button class="chip active" data-s="all">전체</button>
+            <button class="chip" data-s="ACCEPT">결제완료</button>
+            <button class="chip" data-s="INSTRUCT">상품준비중</button>
+            <button class="chip" data-s="DELIVERING">배송중</button>
+            <button class="chip" data-s="FINAL_DELIVERY">배송완료</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="search-input-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="주문번호, 상품명, 수령인 검색..." id="s-ord-search" class="search-input"></div>
+            <span class="badge blue" id="s-ord-count">0건</span>
+          </div>
+          <div class="table-responsive">
+            <table class="tbl">
+              <thead><tr>
+                <th style="width:36px"><input type="checkbox" id="s-ord-check-all" title="전체선택" style="cursor:pointer"></th>
+                <th style="width:70px">구분</th><th>주문번호</th><th>상품명</th><th>옵션</th>
+                <th style="width:50px">수량</th><th>수령인</th>
+                <th style="width:90px">쿠팡상태</th><th style="width:100px">공급상태</th>
+                <th style="width:80px">주문일</th><th style="width:90px">관리</th>
+              </tr></thead>
+              <tbody id="s-ord-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 재발주 모달 ===== -->
+      <div id="reorder-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="max-width:660px;max-height:80vh;overflow-y:auto">
+          <div class="modal-header">
+            <h3>재발주 처리</h3>
+            <button id="reorder-modal-close" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--gray-400)">&times;</button>
+          </div>
+          <div style="padding:16px 24px">
+            <div class="info-banner" style="margin-bottom:16px;background:var(--red-light);border-left:4px solid var(--red)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>매핑 변경 시 다음 발주에도 자동 반영됩니다. 품절 상품은 반드시 매핑을 변경해주세요.</span>
+            </div>
+            <div id="reorder-modal-body"></div>
+            <div class="field" style="margin-top:16px">
+              <label>재발주 메모</label>
+              <input type="text" id="reorder-memo" placeholder="예: 품절 재발주, 주소지 오류 재발주" style="width:100%;padding:10px 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+            </div>
+          </div>
+          <div class="btn-row" style="padding:16px 24px;border-top:1px solid var(--gray-100);justify-content:flex-end">
+            <button id="btn-reorder-cancel" class="btn-outline">취소</button>
+            <button id="btn-reorder-confirm" class="btn-primary" style="background:var(--red)">재발주 처리</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 예치금 ===== -->
+      <section id="page-s-deposit" class="page">
+        <div class="page-top">
+          <div><h1 class="page-title">예치금</h1><p class="page-desc">잔액 및 사용 내역</p></div>
+          <button class="btn-primary" id="btn-s-dep-refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 새로고침</button>
+        </div>
+        <div class="stat-grid" style="margin-bottom:24px">
+          <div class="stat-card" style="border-left:4px solid var(--blue)"><span class="stat-label">현재 잔액</span><span class="stat-value" id="s-dep-balance" style="color:var(--blue)">0원</span></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>거래 내역</h3></div>
+          <table class="tbl"><thead><tr><th>일시</th><th>구분</th><th>금액</th><th>잔액</th><th>내용</th></tr></thead>
+          <tbody id="s-dep-body"></tbody></table>
+        </div>
+      </section>
+
+      <!-- ===== 공급처: 상품 카탈로그 (셀러) ===== -->
+      <section id="page-s-ws-catalog" class="page">
+        <div class="page-top">
+          <div><h1 class="page-title">상품 카탈로그</h1><p class="page-desc">공급처 상품 목록</p></div>
+        </div>
+        <div class="ws-cat-tabs" id="s-ws-cat-tabs">
+          <button class="ws-cat-tab active" data-cat="all">전체보기</button>
+        </div>
+        <div class="ws-toolbar">
+          <div class="search-input-wrap" style="max-width:320px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 14px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="상품 검색..." id="s-ws-search" class="search-input">
+          </div>
+          <span class="badge blue" id="s-ws-total">전체상품수 : 0개</span>
+        </div>
+        <div class="ws-product-grid" id="s-ws-grid"></div>
+      </section>
     </main>
   </div>
 
@@ -189,7 +309,9 @@
         <span class="nav-label">자동화</span>
         <a href="#" class="nav-item active" data-page="a-dash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>대시보드</span></a>
         <a href="#" class="nav-item" data-page="a-sellers"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>셀러 관리</span></a>
+        <a href="#" class="nav-item" data-page="a-deposits"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span>예치금 관리</span></a>
         <a href="#" class="nav-item" data-page="a-sup-req"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>공급처 등록요청</span></a>
+        <a href="#" class="nav-item" data-page="a-order-tracking"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg><span>발주 추적</span></a>
         <a href="#" class="nav-item" data-page="a-po"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg><span>통합 발주서</span></a>
         <a href="#" class="nav-item" data-page="a-invoice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2"/></svg><span>송장 일괄 등록</span></a>
         <a href="#" class="nav-item" data-page="a-review"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>체험단 취합 / 카톡</span></a>
@@ -294,16 +416,84 @@
         </div>
       </section>
       <section id="page-a-rv-invoice" class="page">
-        <div class="page-top"><div><h1 class="page-title">체험단 송장</h1></div></div>
-        <div class="card">
-          <div class="invoice-toolbar">
-            <label class="btn-outline file-btn">체험단 송장 엑셀<input type="file" accept=".xlsx,.xls,.csv" id="a-rvinv-file" hidden></label>
-            <span class="file-name-display" id="a-rvinv-fname">파일 선택</span>
-            <select id="a-rvinv-courier" class="input-sm"><option value="CJGLS">CJ대한통운</option><option value="HANJIN">한진택배</option><option value="LOTTE">롯데택배</option></select>
+        <div class="page-top"><div><h1 class="page-title">체험단 주문관리</h1><p class="page-desc">주문분류 및 송장등록을 관리합니다</p></div></div>
+
+        <!-- ① 주문분류 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <h3>① 주문분류 (결제완료 → 상품준비중 승인)</h3>
+            <span style="font-size:13px;color:var(--gray-500)">체험단 주문을 선택 후 승인하세요</span>
           </div>
-          <div class="hidden" id="a-rvinv-result">
-            <table class="tbl"><thead><tr><th>셀러</th><th>주문번호</th><th>송장번호</th><th>결과</th></tr></thead><tbody id="a-rvinv-body"></tbody></table>
-            <button class="btn-primary btn-lg" id="btn-a-apply-rvinv" style="margin:16px 24px;width:calc(100% - 48px)">체험단 송장 등록 실행</button>
+          <div style="padding:16px 24px">
+            <div class="form-grid">
+              <div class="field">
+                <label>셀러 선택 <span class="req">*</span></label>
+                <select id="a-cls-seller" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><option value="">셀러를 선택하세요</option></select>
+              </div>
+              <div class="field">
+                <label>조회 기간</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="date" id="a-cls-from" style="flex:1;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                  <span style="color:var(--gray-400)">~</span>
+                  <input type="date" id="a-cls-to" style="flex:1;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                </div>
+              </div>
+            </div>
+            <button class="btn-outline" id="btn-a-cls-fetch" style="margin-top:4px">결제완료 주문 조회</button>
+          </div>
+          <div class="hidden" id="a-cls-result">
+            <div style="padding:10px 24px;background:var(--gray-50);border-top:1px solid var(--gray-200);display:flex;align-items:center;gap:16px">
+              <label style="font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="a-cls-check-all"> 전체선택
+              </label>
+              <span id="a-cls-summary" style="font-size:13px;color:var(--gray-500)"></span>
+              <button class="btn-primary" id="btn-a-cls-approve" style="margin-left:auto;padding:6px 20px;font-size:13px">선택 승인 (체험단)</button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th style="width:40px;text-align:center">선택</th><th>주문번호</th><th>상품명</th><th>수령인</th><th>주문일시</th><th style="width:80px">결과</th></tr></thead>
+              <tbody id="a-cls-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ② 송장등록 -->
+        <div class="card">
+          <div class="card-header">
+            <h3>② 송장등록 (상품준비중 → 송장번호 입력)</h3>
+            <span style="font-size:13px;color:var(--gray-500)">조회된 주문에 송장번호를 입력 후 등록하세요</span>
+          </div>
+          <div style="padding:16px 24px">
+            <div class="form-grid">
+              <div class="field">
+                <label>셀러 선택 <span class="req">*</span></label>
+                <select id="a-inv-seller" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><option value="">셀러를 선택하세요</option></select>
+              </div>
+              <div class="field">
+                <label>조회 기간</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="date" id="a-inv-from" style="flex:1;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                  <span style="color:var(--gray-400)">~</span>
+                  <input type="date" id="a-inv-to" style="flex:1;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                </div>
+              </div>
+              <div class="field">
+                <label>택배사</label>
+                <select id="a-inv-courier" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                  <option value="CJGLS">CJ대한통운</option><option value="HANJIN">한진택배</option><option value="LOTTE">롯데택배</option><option value="KGB">로젠택배</option><option value="EPOST">우체국택배</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn-outline" id="btn-a-inv-fetch" style="margin-top:4px">상품준비중 주문 조회</button>
+          </div>
+          <div class="hidden" id="a-inv-result">
+            <div style="padding:10px 24px;background:var(--gray-50);border-top:1px solid var(--gray-200);display:flex;align-items:center;gap:16px">
+              <span id="a-inv-summary" style="font-size:13px;color:var(--gray-500)"></span>
+              <button class="btn-primary" id="btn-a-inv-apply" style="margin-left:auto;padding:6px 20px;font-size:13px">송장 일괄 등록</button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>주문번호</th><th>상품명</th><th>수령인</th><th>주문일시</th><th style="width:180px">송장번호</th><th style="width:80px">결과</th></tr></thead>
+              <tbody id="a-inv-body"></tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -332,12 +522,74 @@
         </div>
       </section>
 
+      <!-- ===== 발주 추적 관리 (관리자) ===== -->
+      <section id="page-a-order-tracking" class="page">
+        <div class="page-top">
+          <div><h1 class="page-title">발주 추적</h1><p class="page-desc">셀러별 공급 상태 관리 및 공급취소 처리</p></div>
+          <button class="btn-primary" id="btn-a-track-refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 새로고침</button>
+        </div>
+        <!-- 공급취소 등록 폼 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><h3>공급취소 등록</h3><span style="font-size:13px;color:var(--gray-500)">공급처에서 취소된 주문을 셀러에게 알립니다</span></div>
+          <div style="padding:16px 24px">
+            <div class="form-grid">
+              <div class="field"><label>셀러 선택 <span class="req">*</span></label>
+                <select id="a-track-seller" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><option value="">셀러를 선택하세요</option></select></div>
+              <div class="field"><label>쿠팡 주문번호 <span class="req">*</span></label><input type="text" id="a-track-orderid" placeholder="쿠팡 주문번호"></div>
+              <div class="field"><label>상품명</label><input type="text" id="a-track-product" placeholder="상품명 (선택)"></div>
+              <div class="field"><label>취소 사유 <span class="req">*</span></label>
+                <select id="a-track-reason" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+                  <option value="품절">품절</option><option value="주소지오류">주소지 오류</option><option value="기타">기타</option>
+                </select></div>
+            </div>
+            <button class="btn-danger" id="btn-a-track-cancel" style="margin-top:12px;padding:10px 24px;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer">공급취소 등록</button>
+          </div>
+        </div>
+        <!-- 추적 내역 -->
+        <div class="filter-chips" id="a-track-chips">
+          <button class="chip active" data-s="all">전체</button>
+          <button class="chip" data-s="발주완료" style="color:var(--green)">발주완료</button>
+          <button class="chip" data-s="공급취소" style="color:var(--red)">공급취소</button>
+          <button class="chip" data-s="재발주완료" style="color:var(--blue)">재발주완료</button>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="card-header">
+            <div class="search-input-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="주문번호, 셀러, 상품명 검색..." id="a-track-search" class="search-input"></div>
+            <span class="badge blue" id="a-track-count">0건</span>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>셀러</th><th>쿠팡 주문번호</th><th>상품명</th><th>수령인</th><th>공급상태</th><th>취소사유</th><th>처리일시</th><th>관리</th></tr></thead>
+            <tbody id="a-track-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== 예치금 관리 (관리자) ===== -->
+      <section id="page-a-deposits" class="page">
+        <div class="page-top">
+          <div><h1 class="page-title">예치금 관리</h1><p class="page-desc">셀러별 예치금 충전 및 차감</p></div>
+          <button class="btn-primary" id="btn-a-dep-refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 새로고침</button>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>셀러별 잔액</h3></div>
+          <table class="tbl"><thead><tr><th>셀러</th><th>회사명</th><th style="text-align:right">잔액</th><th style="width:260px">관리</th></tr></thead>
+          <tbody id="a-dep-body"></tbody></table>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><h3>최근 거래 내역</h3></div>
+          <table class="tbl"><thead><tr><th>셀러</th><th>일시</th><th>구분</th><th style="text-align:right">금액</th><th style="text-align:right">잔액</th><th>내용</th></tr></thead>
+          <tbody id="a-dep-tx-body"></tbody></table>
+        </div>
+      </section>
+
       <!-- ===== 공급처: 상품 리스트 ===== -->
       <section id="page-a-ws-products" class="page">
         <div class="page-top">
           <div><h1 class="page-title">상품 리스트</h1><p class="page-desc">도매 공급처 상품을 관리합니다</p></div>
           <div class="btn-row">
-            <button class="btn-outline" id="btn-ws-excel-down"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg> 전체제품 엑셀 다운로드</button>
+            <button class="btn-outline" id="btn-ws-excel-template"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg> 엑셀 템플릿</button>
+            <label class="btn-outline file-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 엑셀 업로드<input type="file" accept=".xlsx,.xls,.csv" id="ws-excel-upload" hidden></label>
+            <button class="btn-outline" id="btn-ws-excel-down"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg> 전체 엑셀 다운로드</button>
             <button class="btn-primary" id="btn-ws-add-product"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 상품 등록</button>
           </div>
         </div>
@@ -396,7 +648,7 @@
         </div>
         <div class="card" style="margin-top:16px">
           <table class="tbl">
-            <thead><tr><th>주문번호</th><th>주문자</th><th>상품명</th><th>수량</th><th>금액</th><th>상태</th><th>주문일</th><th style="width:140px">관리</th></tr></thead>
+            <thead><tr><th>주문번호</th><th>셀러</th><th>주문자</th><th>상품명</th><th>수량</th><th>금액</th><th>상태</th><th>주문일</th><th style="width:140px">관리</th></tr></thead>
             <tbody id="ws-ord-body"></tbody>
           </table>
         </div>
@@ -450,13 +702,15 @@
               <option value="비과세">비과세</option><option value="과세">과세</option>
             </select>
           </div>
-          <div class="field"><label>공급가 (원) <span class="req">*</span></label><input type="number" id="ws-p-price" placeholder="0"></div>
-          <div class="field"><label>배송비</label>
-            <select id="ws-p-ship" style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
+          <div class="field full"><label>배송비</label>
+            <select id="ws-p-ship" style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font);width:200px">
               <option value="수량별배송비">수량별배송비</option><option value="무료배송">무료배송</option><option value="착불">착불</option><option value="선불">선불</option>
             </select>
           </div>
-          <div class="field full"><label>옵션 (쉼표로 구분)</label><input type="text" id="ws-p-options" placeholder="예: 3kg, 5kg, 10kg"></div>
+          <div class="field full">
+            <label>상품 옵션 <span class="req">*</span> <button type="button" class="btn-outline" id="btn-ws-add-option" style="padding:4px 10px;font-size:12px;margin-left:8px">+ 옵션 추가</button></label>
+            <div id="ws-p-options-list" style="display:flex;flex-direction:column;gap:8px;margin-top:8px"></div>
+          </div>
           <div class="field full"><label>배송방법</label><input type="text" id="ws-p-delivery" placeholder="예: 롯데택배 / 제주/산간 배송불가"></div>
           <div class="field full"><label>원산지</label><input type="text" id="ws-p-origin" placeholder="예: 국내산(제주)"></div>
           <div class="field full"><label>비고</label><textarea id="ws-p-note" style="width:100%;height:60px;padding:12px 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;resize:vertical" placeholder="추가 정보"></textarea></div>

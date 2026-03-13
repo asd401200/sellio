@@ -1657,6 +1657,20 @@ body {
   background: var(--gray-50);
 }
 
+/* ===== 재발주 / 공급 상태 ===== */
+tr.supply-cancel { background: #fff5f5; }
+tr.supply-cancel td { border-bottom-color: #ffd7d7; }
+tr.supply-ok { background: #f0fff7; }
+tr.supply-ok td { border-bottom-color: #c6f6e0; }
+tr.supply-reorder { background: #f0f7ff; }
+.badge-supply-cancel { background: var(--red-light); color: var(--red); font-weight: 700; animation: pulse-red 1.5s infinite; }
+.badge-supply-ok { background: var(--green-light); color: var(--green); font-weight: 600; }
+.badge-supply-reorder { background: var(--blue-light); color: var(--blue); font-weight: 600; }
+.badge-supply-none { background: var(--gray-100); color: var(--gray-500); }
+@keyframes pulse-red { 0%,100% { opacity:1; } 50% { opacity:.65; } }
+.reorder-btn { padding:4px 10px; font-size:11px; background:var(--red); color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:600; }
+.reorder-btn:hover { background:#c0392b; }
+
 /* ===== NAV DIVIDER ===== */
 .nav-divider {
   height: 1px;

@@ -26,6 +26,8 @@ const F = {
   supplierRequests: 'data/supplier_requests.json',
   wsProducts: 'data/ws_products.json',
   wsOrders: 'data/ws_orders.json',
+  deposits: 'data/deposits.json',
+  orderTracking: 'data/order_tracking.json',
 };
 Object.values(F).forEach(f => {
   if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') ? '[]' : '{}', 'utf8');
@@ -329,6 +331,50 @@ app.post('/api/admin/invoice-for-seller', async (req, res) => {
   }
   const ok = results.filter(r => r.success).length;
   res.json({ success: true, results, summary: { total: invoices?.length || 0, success: ok, fail: (invoices?.length || 0) - ok } });
+});
+
+// 관리자: 특정 셀러 주문 조회
+app.post('/api/admin/orders-for-seller', async (req, res) => {
+  const { sellerUid, status, createdAtFrom, createdAtTo } = req.body;
+  const users = rj(F.users, {});
+  const seller = users[sellerUid];
+  if (!seller?.vendorId || !seller?.accessKey || !seller?.secretKey)
+    return res.status(400).json({ success: false, message: '셀러 API 미등록' });
+  try {
+    const from = createdAtFrom || new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    const to = createdAtTo || new Date().toISOString().split('T')[0];
+    const r = await cpnGet(`/v2/providers/openapi/apis/api/v4/vendors/${seller.vendorId}/ordersheets?status=${status}&createdAtFrom=${from}&createdAtTo=${to}&maxPerPage=100`, seller.secretKey, seller.accessKey, seller.vendorId);
+    const all = (r.data?.data || []).map(o => ({
+      orderId: o.orderId, shipmentBoxId: o.shipmentBoxId,
+      receiverName: o.receiver?.name || '', productName: o.sellerProductName || '',
+      optionName: o.sellerProductItemName || '', quantity: o.shippingCount || 1,
+      orderDate: o.orderedAt || '', status,
+      receiverPhone: o.receiver?.safeNumber || o.receiver?.receiverPhoneNumber1 || '',
+      receiverAddr: ((o.receiver?.addr1 || '') + ' ' + (o.receiver?.addr2 || '')).trim(),
+    }));
+    all.sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
+    res.json({ success: true, orders: all, total: all.length });
+  } catch (e) { res.json({ success: false, message: e.response?.data?.message || e.message, orders: [], total: 0 }); }
+});
+
+// 관리자: 특정 셀러 주문 승인 (결제완료 → 상품준비중)
+app.post('/api/admin/approve-orders-for-seller', async (req, res) => {
+  const { sellerUid, shipmentBoxIds } = req.body;
+  const users = rj(F.users, {});
+  const seller = users[sellerUid];
+  if (!seller?.vendorId || !seller?.accessKey || !seller?.secretKey)
+    return res.status(400).json({ success: false, message: '셀러 API 미등록' });
+  const results = [];
+  for (const boxId of (shipmentBoxIds || [])) {
+    try {
+      await cpnPut(`/v2/providers/openapi/apis/api/v4/vendors/${seller.vendorId}/ordersheets/${boxId}/acknowledgement`,
+        { vendorId: seller.vendorId, shipmentBoxId: parseInt(boxId) },
+        seller.secretKey, seller.accessKey, seller.vendorId);
+      results.push({ shipmentBoxId: boxId, success: true });
+    } catch (e) { results.push({ shipmentBoxId: boxId, success: false, message: e.response?.data?.message || e.message }); }
+  }
+  const ok = results.filter(r => r.success).length;
+  res.json({ success: true, results, summary: { total: shipmentBoxIds?.length || 0, success: ok, fail: (shipmentBoxIds?.length || 0) - ok } });
 });
 
 // ========== 엑셀 파싱 ==========
@@ -652,19 +698,28 @@ app.get('/api/ws/products', (req, res) => {
 
 app.post('/api/ws/product/save', imgUpload.single('image'), (req, res) => {
   let list = rj(F.wsProducts, []); if (!Array.isArray(list)) list = [];
-  const { id, name, category, tax, price, shipping, options, delivery, origin, note } = req.body;
+  const { id, name, category, tax, shipping, delivery, origin, note } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '상품명 필요' });
-  if (!price) return res.status(400).json({ success: false, message: '공급가 필요' });
+
+  let parsedOptions = [];
+  try { parsedOptions = JSON.parse(req.body.options || '[]'); } catch { parsedOptions = []; }
+  if (!parsedOptions.length) return res.status(400).json({ success: false, message: '옵션을 1개 이상 추가하세요' });
 
   const imageUrl = req.file ? `/uploads/${req.file.filename}` : (req.body.existingImage || '');
+
+  const productData = {
+    name, category: category || '기타', tax: tax || '비과세',
+    options: parsedOptions, shipping: shipping || '수량별배송비',
+    delivery: delivery || '', origin: origin || '', note: note || ''
+  };
 
   if (id) {
     const idx = list.findIndex(p => String(p.id) === String(id));
     if (idx >= 0) {
-      list[idx] = { ...list[idx], name, category: category || '기타', tax: tax || '비과세', price: parseInt(price) || 0, shipping: shipping || '수량별배송비', options: options || '', delivery: delivery || '', origin: origin || '', note: note || '', image: imageUrl || list[idx].image, updatedAt: new Date().toISOString() };
+      list[idx] = { ...list[idx], ...productData, image: imageUrl || list[idx].image, updatedAt: new Date().toISOString() };
     }
   } else {
-    list.push({ id: Date.now(), name, category: category || '기타', tax: tax || '비과세', price: parseInt(price) || 0, shipping: shipping || '수량별배송비', options: options || '', delivery: delivery || '', origin: origin || '', note: note || '', image: imageUrl, createdAt: new Date().toISOString() });
+    list.push({ id: Date.now(), ...productData, image: imageUrl, createdAt: new Date().toISOString() });
   }
   wj(F.wsProducts, list);
   res.json({ success: true });
@@ -689,11 +744,13 @@ app.post('/api/ws/order/save', (req, res) => {
   if (!name) return res.status(400).json({ success: false, message: '주문자명 필요' });
   if (!productId) return res.status(400).json({ success: false, message: '상품 선택 필요' });
 
+  const { sellerId, sellerName } = req.body;
   const ordNo = 'WS' + Date.now().toString().slice(-10);
   list.unshift({
     id: Date.now(), orderNo: ordNo, name, phone: phone || '', email: email || '',
     address: address || '', productId, productName: productName || '', quantity: parseInt(quantity) || 1,
     amount: parseInt(amount) || 0, memo: memo || '', status: '신규',
+    sellerId: sellerId || '', sellerName: sellerName || '',
     createdAt: new Date().toISOString()
   });
   wj(F.wsOrders, list);
@@ -712,6 +769,195 @@ app.post('/api/ws/order/delete', (req, res) => {
   let list = rj(F.wsOrders, []);
   list = list.filter(o => String(o.id) !== String(req.body.id));
   wj(F.wsOrders, list);
+  res.json({ success: true });
+});
+
+// 셀러별 주문 조회
+app.get('/api/ws/orders/seller/:sellerId', (req, res) => {
+  let list = rj(F.wsOrders, []); if (!Array.isArray(list)) list = [];
+  const filtered = list.filter(o => o.sellerId === req.params.sellerId);
+  res.json({ success: true, orders: filtered, total: filtered.length });
+});
+
+// ========== 예치금 관리 ==========
+app.get('/api/deposits/balance/:userId', (req, res) => {
+  const data = rj(F.deposits, { balances: {}, transactions: [] });
+  res.json({ success: true, balance: data.balances?.[req.params.userId] || 0 });
+});
+
+app.get('/api/deposits/transactions/:userId', (req, res) => {
+  const data = rj(F.deposits, { balances: {}, transactions: [] });
+  const txs = (data.transactions || []).filter(t => t.userId === req.params.userId);
+  res.json({ success: true, transactions: txs });
+});
+
+app.post('/api/deposits/charge', (req, res) => {
+  const { userId, amount, description } = req.body;
+  if (!userId || !amount) return res.status(400).json({ success: false, message: '필수 항목 누락' });
+  const data = rj(F.deposits, { balances: {}, transactions: [] });
+  if (!data.balances) data.balances = {};
+  if (!data.transactions) data.transactions = [];
+  const prev = data.balances[userId] || 0;
+  const amt = parseInt(amount);
+  data.balances[userId] = prev + amt;
+  data.transactions.unshift({
+    id: Date.now(), userId, type: 'charge', amount: amt,
+    balance: prev + amt, description: description || '예치금 충전',
+    createdAt: new Date().toISOString()
+  });
+  wj(F.deposits, data);
+  console.log(`[예치금 충전] ${userId}: +${amt.toLocaleString()}원 → ${(prev+amt).toLocaleString()}원`);
+  res.json({ success: true, balance: prev + amt });
+});
+
+app.post('/api/deposits/deduct', (req, res) => {
+  const { userId, amount, description, type } = req.body;
+  if (!userId || !amount) return res.status(400).json({ success: false, message: '필수 항목 누락' });
+  const data = rj(F.deposits, { balances: {}, transactions: [] });
+  if (!data.balances) data.balances = {};
+  if (!data.transactions) data.transactions = [];
+  const prev = data.balances[userId] || 0;
+  const amt = parseInt(amount);
+  if (prev < amt) return res.json({ success: false, message: `잔액 부족 (현재: ${prev.toLocaleString()}원)` });
+  data.balances[userId] = prev - amt;
+  data.transactions.unshift({
+    id: Date.now(), userId, type: type || 'deduct', amount: -amt,
+    balance: prev - amt, description: description || '예치금 차감',
+    createdAt: new Date().toISOString()
+  });
+  wj(F.deposits, data);
+  console.log(`[예치금 차감] ${userId}: -${amt.toLocaleString()}원 → ${(prev-amt).toLocaleString()}원`);
+  res.json({ success: true, balance: prev - amt });
+});
+
+app.get('/api/admin/deposits', (req, res) => {
+  const data = rj(F.deposits, { balances: {}, transactions: [] });
+  const users = rj(F.users, []);
+  const sellers = (Array.isArray(users) ? users : []).filter(u => u.role === 'seller');
+  const summary = sellers.map(u => ({
+    uid: u.uid, loginId: u.loginId, company: u.company || u.loginId,
+    balance: data.balances?.[u.uid] || 0
+  }));
+  res.json({ success: true, summary, transactions: data.transactions || [] });
+});
+
+// 셀러 목록 (어드민용)
+app.post('/api/auth/users', (req, res) => {
+  const users = rj(F.users, []); if (!Array.isArray(users)) return res.json({ users: [] });
+  res.json({ success: true, users: users.map(u => ({ uid: u.uid, loginId: u.loginId, company: u.company, role: u.role })) });
+});
+
+// 어드민: 추적 상태 직접 변경
+app.post('/api/order-tracking/update-admin-status', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  const { trackId, status } = req.body;
+  const idx = list.findIndex(t => t.id === trackId);
+  if (idx >= 0) { list[idx].supplyStatus = status; list[idx].updatedAt = new Date().toISOString(); wj(F.orderTracking, list); }
+  res.json({ success: true });
+});
+
+// ========== 주문 추적 / 재발주 시스템 ==========
+// 데이터: data/order_tracking.json (array)
+// 키: id(track_xxx), sellerId, orderId(쿠팡), supplyStatus
+
+app.get('/api/order-tracking/:sellerId', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  res.json({ success: true, tracking: list.filter(t => t.sellerId === req.params.sellerId) });
+});
+
+app.get('/api/admin/order-tracking', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  res.json({ success: true, tracking: list });
+});
+
+// 어드민: 공급취소 등록
+app.post('/api/order-tracking/cancel', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  const { orderId, sellerId, sellerName, productName, optionName, quantity, receiverName, orderDate, cancelReason } = req.body;
+  if (!orderId || !sellerId) return res.status(400).json({ success: false, message: '주문번호/셀러 필요' });
+  const key = `${sellerId}_${orderId}`;
+  const idx = list.findIndex(t => t.key === key);
+  const entry = {
+    id: idx >= 0 ? list[idx].id : 'track_' + Date.now(),
+    key, orderId: String(orderId), sellerId, sellerName: sellerName || '',
+    productName: productName || '', optionName: optionName || '',
+    quantity: parseInt(quantity) || 1, receiverName: receiverName || '', orderDate: orderDate || '',
+    supplyStatus: '공급취소', cancelReason: cancelReason || '기타',
+    reorderedFromId: null, reorderedToId: null, reorderMemo: '',
+    createdAt: idx >= 0 ? list[idx].createdAt : new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  if (idx >= 0) list[idx] = entry; else list.unshift(entry);
+  wj(F.orderTracking, list);
+  console.log(`[공급취소] ${orderId} - 셀러:${sellerName} - 사유:${cancelReason}`);
+  res.json({ success: true });
+});
+
+// 공급 상태 업데이트 (발주완료 처리)
+app.post('/api/order-tracking/update', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  const { orderId, sellerId, sellerName, productName, optionName, quantity, receiverName, orderDate, supplyStatus } = req.body;
+  if (!orderId || !sellerId) return res.status(400).json({ success: false, message: '필수 항목 누락' });
+  const key = `${sellerId}_${orderId}`;
+  const idx = list.findIndex(t => t.key === key);
+  if (idx >= 0) {
+    list[idx].supplyStatus = supplyStatus || '발주완료';
+    list[idx].updatedAt = new Date().toISOString();
+  } else {
+    list.unshift({
+      id: 'track_' + Date.now(), key, orderId: String(orderId), sellerId, sellerName: sellerName || '',
+      productName: productName || '', optionName: optionName || '',
+      quantity: parseInt(quantity) || 1, receiverName: receiverName || '', orderDate: orderDate || '',
+      supplyStatus: supplyStatus || '발주완료', cancelReason: '',
+      reorderedFromId: null, reorderedToId: null, reorderMemo: '',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+  }
+  wj(F.orderTracking, list);
+  res.json({ success: true });
+});
+
+// 셀러: 재발주 처리
+app.post('/api/order-tracking/reorder', (req, res) => {
+  let list = rj(F.orderTracking, []); if (!Array.isArray(list)) list = [];
+  const { trackIds, memo } = req.body;
+  if (!Array.isArray(trackIds) || !trackIds.length) return res.status(400).json({ success: false, message: '재발주 항목 없음' });
+
+  const newEntries = [];
+  const updates = {};
+  trackIds.forEach(origId => {
+    const orig = list.find(t => t.id === origId);
+    if (!orig || orig.supplyStatus !== '공급취소') return;
+    const newId = 'track_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    updates[origId] = newId;
+    newEntries.push({
+      id: newId, key: orig.key + '_re', orderId: orig.orderId, sellerId: orig.sellerId,
+      sellerName: orig.sellerName, productName: orig.productName, optionName: orig.optionName,
+      quantity: orig.quantity, receiverName: orig.receiverName, orderDate: orig.orderDate,
+      supplyStatus: '재발주완료', cancelReason: '', reorderedFromId: origId, reorderedToId: null,
+      reorderMemo: memo || '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+  });
+
+  list = list.map(t => {
+    if (updates[t.id]) return { ...t, supplyStatus: '재발주완료', reorderedToId: updates[t.id], updatedAt: new Date().toISOString() };
+    return t;
+  });
+  list = [...newEntries, ...list];
+  wj(F.orderTracking, list);
+  console.log(`[재발주] ${newEntries.length}건 처리`);
+  res.json({ success: true, count: newEntries.length });
+});
+
+// 예치금 정기 차감 설정 저장/조회
+app.get('/api/deposits/settings', (req, res) => {
+  const data = rj(F.deposits, { balances: {}, transactions: [], settings: {} });
+  res.json({ success: true, settings: data.settings || {} });
+});
+app.post('/api/deposits/settings', (req, res) => {
+  const data = rj(F.deposits, { balances: {}, transactions: [], settings: {} });
+  data.settings = { ...data.settings, ...req.body };
+  wj(F.deposits, data);
   res.json({ success: true });
 });
 

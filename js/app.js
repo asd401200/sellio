@@ -86,7 +86,7 @@ async function enterApp() {
     $('app-admin').classList.remove('hidden');
     $('a-name').textContent = currentUser.company || '관리자';
     initAdminNav(); initAdminDash(); initAdminSupReq(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice(); initAdminSettings();
-    initWsProducts(); initWsOrderNew(); initWsOrders();
+    initWsProducts(); initWsOrderNew(); initWsOrders(); initAdminDeposits(); initAdminOrderTracking();
     loadAdminDash(); loadSolapiConfig();
   } else {
     $('app-seller').classList.remove('hidden');
@@ -94,6 +94,7 @@ async function enterApp() {
     $('s-avatar').textContent = (currentUser.company || currentUser.loginId || 'U')[0].toUpperCase();
     $('s-sub').textContent = '셀러';
     initSellerNav(); initProducts(); initReview(); initRvClassify(); initSettings(); initModal();
+    initSellerWsCatalog(); initSellerOrders(); initSellerDeposit();
     try {
       const d = await post('/user/load-keys', { userId: currentUser.uid });
       if (d.keys) { localStorage.setItem('sellio_api', JSON.stringify(d.keys)); $('s-vid').value = d.keys.vendorId||''; $('s-ak').value = d.keys.accessKey||''; $('s-sk').value = d.keys.secretKey||''; $('s-sub').textContent = `셀러 #${d.keys.vendorId}`; }
@@ -280,6 +281,11 @@ function openModal(p) {
 async function submitReview() {
   const kw = $('rv-kw').value.trim(), tc = $('rv-total').value, dc = $('rv-daily').value;
   if (!kw) return toast('키워드 입력'); if (!tc||!dc) return toast('건수 입력');
+  // 오전 9시 이전 경고 (매핑 완료 상품은 실주문으로 처리될 수 있음)
+  const nowH = new Date().getHours();
+  if (nowH < 9) {
+    if (!confirm(`⚠️ 주의: 현재 오전 ${nowH}시입니다.\n매핑 완료 상품의 경우 오전 9시 이전 체험단 주문은 실제 발주로 처리될 수 있습니다.\n계속 진행하시겠습니까?`)) return;
+  }
   const btn = $('btn-rv-submit'); btn.disabled = true; btn.textContent = '신청 중...';
   const body = {
     userId: currentUser.uid, seller: currentUser.company||currentUser.loginId,
@@ -633,8 +639,103 @@ function renderAdminReview() {
   $('a-rv-body').innerHTML = f.length ? f.map(r=>`<tr><td>${esc(r.seller||'-')}</td><td>${esc(r.productName||'-')}</td><td>${esc(r.keyword||'-')}</td><td>${r.totalCount||0}</td><td>${r.dailyCount||0}</td><td><span class="badge ${bc(r.status)}">${esc(r.status)}</span></td><td>${r.createdAt?new Date(r.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="7" class="empty"><p>체험단 없음</p></td></tr>';
 }
 function initAdminRvInvoice() {
-  $('a-rvinv-file').onchange = async e => { const file=e.target.files[0]; if (!file) return; $('a-rvinv-fname').textContent=file.name; const fd=new FormData(); fd.append('file',file); try { const d=await fetchRaw(`${API}/invoice/parse-excel`,{method:'POST',body:fd}); if(d.success&&d.data.length){$('a-rvinv-result').classList.remove('hidden');$('a-rvinv-result').dataset.parsed=JSON.stringify(d.data);$('a-rvinv-body').innerHTML=d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join('');toast(`${d.data.length}건`);} }catch{toast('파싱 실패');} e.target.value=''; };
-  $('btn-a-apply-rvinv').onclick = async () => { const ps=$('a-rvinv-result').dataset.parsed; if(!ps) return toast('엑셀 먼저'); const parsed=JSON.parse(ps).filter(r=>r.invoiceNumber&&r.orderId); if(!parsed.length) return toast('송장 없음'); const btn=$('btn-a-apply-rvinv'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>'; const courier=$('a-rvinv-courier').value,users=await get('/admin/users'),sellers=(users.users||[]).filter(u=>u.role==='seller'&&u.hasApiKeys); let ts=0,tf=0; for(const s of sellers){try{const d=await post('/admin/invoice-for-seller',{sellerUid:s.uid,invoices:parsed.map(r=>({shipmentBoxId:r.orderId,invoiceNumber:r.invoiceNumber,deliveryCompanyCode:courier})),deliveryCompanyCode:courier});if(d.success){ts+=d.summary.success;tf+=d.summary.fail;}}catch{tf+=parsed.length;}} toast(`체험단 송장: 성공${ts} 실패${tf}`); btn.disabled=false; btn.textContent='체험단 송장 등록 실행'; };
+  const today = new Date().toISOString().split('T')[0];
+  const from30 = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+  $('a-cls-from').value = from30; $('a-cls-to').value = today;
+  $('a-inv-from').value = from30; $('a-inv-to').value = today;
+  loadAdminRvSellerOptions();
+  $('btn-a-cls-fetch').onclick = fetchAdminClsOrders;
+  $('a-cls-check-all').onclick = e => document.querySelectorAll('#a-cls-body input[type=checkbox]').forEach(c => c.checked = e.target.checked);
+  $('btn-a-cls-approve').onclick = approveAdminClsOrders;
+  $('btn-a-inv-fetch').onclick = fetchAdminInvOrders;
+  $('btn-a-inv-apply').onclick = applyAdminInvoices;
+}
+async function loadAdminRvSellerOptions() {
+  try {
+    const d = await get('/admin/users');
+    const sellers = (d.users || []).filter(u => u.role === 'seller' && u.hasApiKeys);
+    const opts = '<option value="">셀러를 선택하세요</option>' + sellers.map(u => `<option value="${u.uid}">${esc(u.company || u.loginId)}</option>`).join('');
+    $('a-cls-seller').innerHTML = opts;
+    $('a-inv-seller').innerHTML = opts;
+  } catch {}
+}
+async function fetchAdminClsOrders() {
+  const sellerUid = $('a-cls-seller').value;
+  if (!sellerUid) return toast('셀러를 선택하세요');
+  const btn = $('btn-a-cls-fetch'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 조회 중...';
+  try {
+    const d = await post('/admin/orders-for-seller', { sellerUid, status: 'ACCEPT', createdAtFrom: $('a-cls-from').value, createdAtTo: $('a-cls-to').value });
+    $('a-cls-result').classList.remove('hidden');
+    $('a-cls-summary').textContent = `${d.total || 0}건`;
+    $('a-cls-body').innerHTML = d.orders?.length
+      ? d.orders.map(o => `<tr>
+          <td style="text-align:center"><input type="checkbox" data-boxid="${o.shipmentBoxId}"></td>
+          <td><code style="font-size:12px">${o.orderId || '-'}</code></td>
+          <td style="max-width:220px">${esc(o.productName || '-')}</td>
+          <td>${esc(o.receiverName || '-')}</td>
+          <td>${o.orderDate ? new Date(o.orderDate).toLocaleString('ko') : '-'}</td>
+          <td id="cls-result-${o.shipmentBoxId}">-</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="empty"><p>결제완료 주문 없음</p></td></tr>';
+    toast(d.orders?.length ? `${d.orders.length}건 조회` : '결제완료 주문 없음');
+  } catch { toast('조회 실패'); }
+  btn.disabled = false; btn.textContent = '결제완료 주문 조회';
+}
+async function approveAdminClsOrders() {
+  const sellerUid = $('a-cls-seller').value;
+  if (!sellerUid) return toast('셀러를 선택하세요');
+  const checked = [...document.querySelectorAll('#a-cls-body input[type=checkbox]:checked')];
+  if (!checked.length) return toast('승인할 주문을 선택하세요');
+  if (!confirm(`${checked.length}건을 체험단 주문으로 승인하시겠습니까?`)) return;
+  const btn = $('btn-a-cls-approve'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const d = await post('/admin/approve-orders-for-seller', { sellerUid, shipmentBoxIds: checked.map(c => c.dataset.boxid) });
+    if (d.success) {
+      d.results.forEach(r => { const cell = $(`cls-result-${r.shipmentBoxId}`); if (cell) cell.innerHTML = `<span class="badge ${r.success ? 'green' : 'red'}">${r.success ? '승인' : '실패'}</span>`; });
+      toast(`승인 완료: 성공 ${d.summary.success} / 실패 ${d.summary.fail}`);
+    }
+  } catch { toast('승인 실패'); }
+  btn.disabled = false; btn.textContent = '선택 승인 (체험단)';
+}
+async function fetchAdminInvOrders() {
+  const sellerUid = $('a-inv-seller').value;
+  if (!sellerUid) return toast('셀러를 선택하세요');
+  const btn = $('btn-a-inv-fetch'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 조회 중...';
+  try {
+    const d = await post('/admin/orders-for-seller', { sellerUid, status: 'INSTRUCT', createdAtFrom: $('a-inv-from').value, createdAtTo: $('a-inv-to').value });
+    $('a-inv-result').classList.remove('hidden');
+    $('a-inv-summary').textContent = `${d.total || 0}건 (송장번호 입력 후 등록하세요)`;
+    $('a-inv-body').innerHTML = d.orders?.length
+      ? d.orders.map(o => `<tr>
+          <td><code style="font-size:12px">${o.orderId || '-'}</code></td>
+          <td style="max-width:200px">${esc(o.productName || '-')}</td>
+          <td>${esc(o.receiverName || '-')}</td>
+          <td>${o.orderDate ? new Date(o.orderDate).toLocaleString('ko') : '-'}</td>
+          <td><input type="text" placeholder="송장번호" data-boxid="${o.shipmentBoxId}" class="a-inv-input" style="width:100%;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:13px;font-family:var(--font)"></td>
+          <td id="inv-result-${o.shipmentBoxId}">-</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="empty"><p>상품준비중 주문 없음</p></td></tr>';
+    toast(d.orders?.length ? `${d.orders.length}건 조회` : '상품준비중 주문 없음');
+  } catch { toast('조회 실패'); }
+  btn.disabled = false; btn.textContent = '상품준비중 주문 조회';
+}
+async function applyAdminInvoices() {
+  const sellerUid = $('a-inv-seller').value;
+  if (!sellerUid) return toast('셀러를 선택하세요');
+  const courier = $('a-inv-courier').value;
+  const invoices = [...document.querySelectorAll('#a-inv-body .a-inv-input')]
+    .filter(i => i.value.trim())
+    .map(i => ({ shipmentBoxId: i.dataset.boxid, invoiceNumber: i.value.trim(), deliveryCompanyCode: courier }));
+  if (!invoices.length) return toast('송장번호를 입력하세요');
+  const btn = $('btn-a-inv-apply'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const d = await post('/admin/invoice-for-seller', { sellerUid, invoices, deliveryCompanyCode: courier });
+    if (d.success) {
+      d.results.forEach(r => { const cell = $(`inv-result-${r.shipmentBoxId}`); if (cell) cell.innerHTML = `<span class="badge ${r.success ? 'green' : 'red'}">${r.success ? '등록' : '실패'}</span>`; });
+      toast(`송장 등록: 성공 ${d.summary.success} / 실패 ${d.summary.fail}`);
+    }
+  } catch { toast('실패'); }
+  btn.disabled = false; btn.textContent = '송장 일괄 등록';
 }
 
 // ========================================
@@ -759,8 +860,19 @@ function initWsProducts() {
     };
     reader.readAsDataURL(file);
   };
+  $('btn-ws-add-option').onclick = () => addWsOptionRow();
   $('btn-ws-excel-down').onclick = downloadWsExcel;
+  $('btn-ws-excel-template').onclick = downloadWsTemplate;
+  $('ws-excel-upload').onchange = uploadWsExcel;
   loadWsProducts();
+}
+
+function addWsOptionRow(name = '', price = '') {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:8px;align-items:center';
+  div.innerHTML = `<input type="text" placeholder="옵션명 (예: 3kg)" value="${esc(name)}" class="ws-opt-name" style="flex:1;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><input type="number" placeholder="가격 (원)" value="${price}" class="ws-opt-price" style="width:130px;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><button type="button" style="padding:6px 10px;background:var(--red-light);color:var(--red);border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:16px">&times;</button>`;
+  div.querySelector('button').onclick = () => div.remove();
+  $('ws-p-options-list').appendChild(div);
 }
 
 function clearWsProdImg() {
@@ -789,13 +901,23 @@ function renderWsProducts() {
   if (q) f = f.filter(p => (p.name || '').toLowerCase().includes(q));
   $('ws-prod-total').textContent = `전체상품수 : ${f.length}개`;
 
+  const getMinPrice = p => {
+    if (Array.isArray(p.options) && p.options.length) return Math.min(...p.options.map(o => o.price || 0));
+    return p.price || 0;
+  };
+  const getOptsText = p => {
+    if (Array.isArray(p.options) && p.options.length) return p.options.map(o => `${o.name}: ₩${(o.price||0).toLocaleString()}`).join(' / ');
+    return '';
+  };
+
   $('ws-prod-grid').innerHTML = f.length ? f.map(p => `
     <div class="ws-prod-card" data-wsid="${p.id}">
       ${p.tax === '비과세' ? '<span class="ws-tax-badge">비과세</span>' : '<span class="ws-tax-badge" style="background:var(--blue)">과세</span>'}
       ${p.image ? `<img class="ws-prod-img" src="${esc(p.image)}" alt="${esc(p.name)}">` : '<div class="ws-prod-img-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>'}
       <div class="ws-prod-info">
         <div class="ws-prod-name">${esc(p.name)}</div>
-        <div class="ws-prod-price">공급가: <strong>₩${(p.price || 0).toLocaleString()}~</strong> ${p.options ? '부터(옵션별차등)' : ''}</div>
+        <div class="ws-prod-price">공급가: <strong>₩${getMinPrice(p).toLocaleString()}~</strong></div>
+        <div class="ws-prod-ship" style="font-size:12px;color:var(--gray-500)">${esc(getOptsText(p))}</div>
         <div class="ws-prod-ship">배송비: <strong>${esc(p.shipping || '수량별배송비')}</strong></div>
         <div class="ws-prod-ship">${esc(p.delivery || '')}</div>
       </div>
@@ -816,13 +938,20 @@ function openWsProdModal(product) {
   $('ws-p-name').value = product?.name || '';
   $('ws-p-cat').value = product?.category || '과일';
   $('ws-p-tax').value = product?.tax || '비과세';
-  $('ws-p-price').value = product?.price || '';
   $('ws-p-ship').value = product?.shipping || '수량별배송비';
-  $('ws-p-options').value = product?.options || '';
   $('ws-p-delivery').value = product?.delivery || '';
   $('ws-p-origin').value = product?.origin || '';
   $('ws-p-note').value = product?.note || '';
   $('ws-p-img-file').value = '';
+  // 옵션 목록
+  $('ws-p-options-list').innerHTML = '';
+  if (Array.isArray(product?.options) && product.options.length) {
+    product.options.forEach(o => addWsOptionRow(o.name || '', o.price || ''));
+  } else if (product?.price) {
+    addWsOptionRow('기본', product.price);
+  } else {
+    addWsOptionRow();
+  }
   if (product?.image) {
     $('ws-p-img-preview').innerHTML = `<div class="image-preview"><img src="${esc(product.image)}" alt=""><button type="button" class="image-remove-btn" onclick="event.stopPropagation();clearWsProdImg()">&times;</button></div>`;
   } else { clearWsProdImg(); }
@@ -832,7 +961,16 @@ function openWsProdModal(product) {
 async function saveWsProduct() {
   const name = $('ws-p-name').value.trim();
   if (!name) return toast('상품명 입력');
-  if (!$('ws-p-price').value) return toast('공급가 입력');
+
+  // 옵션 수집
+  const optRows = $('ws-p-options-list').querySelectorAll('div');
+  const optionsArr = [];
+  for (const row of optRows) {
+    const oName = row.querySelector('.ws-opt-name')?.value?.trim();
+    const oPrice = parseInt(row.querySelector('.ws-opt-price')?.value) || 0;
+    if (oName && oPrice > 0) optionsArr.push({ name: oName, price: oPrice });
+  }
+  if (!optionsArr.length) return toast('옵션을 1개 이상 추가하세요 (옵션명 + 가격)');
 
   const btn = $('btn-ws-prod-save'); btn.disabled = true; btn.textContent = '저장 중...';
   const fd = new FormData();
@@ -840,9 +978,8 @@ async function saveWsProduct() {
   fd.append('name', name);
   fd.append('category', $('ws-p-cat').value);
   fd.append('tax', $('ws-p-tax').value);
-  fd.append('price', $('ws-p-price').value);
   fd.append('shipping', $('ws-p-ship').value);
-  fd.append('options', $('ws-p-options').value);
+  fd.append('options', JSON.stringify(optionsArr));
   fd.append('delivery', $('ws-p-delivery').value);
   fd.append('origin', $('ws-p-origin').value);
   fd.append('note', $('ws-p-note').value);
@@ -868,55 +1005,158 @@ async function saveWsProduct() {
 
 function downloadWsExcel() {
   if (!wsProducts.length) return toast('상품 없음');
-  const data = wsProducts.map(p => ({ '상품명': p.name, '카테고리': p.category, '과세구분': p.tax, '공급가': p.price, '배송비': p.shipping, '옵션': p.options, '배송방법': p.delivery, '원산지': p.origin, '비고': p.note }));
+  const data = wsProducts.map(p => {
+    const opts = Array.isArray(p.options) ? p.options.map(o => `${o.name}:${o.price}`).join(', ') : '';
+    return { '상품명': p.name, '카테고리': p.category, '과세구분': p.tax, '옵션(옵션명:가격)': opts, '배송비': p.shipping, '배송방법': p.delivery, '원산지': p.origin, '비고': p.note };
+  });
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '상품');
   XLSX.writeFile(wb, `공급처_상품_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('엑셀 다운로드');
 }
 
+function downloadWsTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['상품명', '카테고리', '과세구분', '옵션(옵션명:가격)', '배송비', '배송방법', '원산지', '비고'],
+    ['제주 한라봉', '과일', '비과세', '3kg:15000, 5kg:25000, 10kg:45000', '수량별배송비', '롯데택배 / 제주산간 불가', '국내산(제주)', '산지직송'],
+    ['프리미엄 사과', '과일', '비과세', '5kg:30000, 10kg:55000', '무료배송', 'CJ대한통운', '국내산(경북)', ''],
+  ]);
+  ws['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 35 }, { wch: 14 }, { wch: 25 }, { wch: 15 }, { wch: 15 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '상품템플릿');
+  XLSX.writeFile(wb, '공급처_상품_템플릿.xlsx');
+  toast('템플릿 다운로드');
+}
+
+async function uploadWsExcel(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      if (!rows.length) return toast('빈 엑셀 파일');
+
+      const products = rows.map(row => {
+        const keys = Object.keys(row);
+        const find = (...pats) => { const k = keys.find(k => pats.some(p => k.includes(p))); return k ? String(row[k]).trim() : ''; };
+        const name = find('상품명', '이름', '제품명');
+        if (!name) return null;
+
+        // 옵션 파싱: "3kg:15000, 5kg:25000" → [{name:"3kg", price:15000}, ...]
+        const optStr = find('옵션', 'option');
+        let options = [];
+        if (optStr) {
+          options = optStr.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+            const [oName, oPrice] = s.split(':').map(x => x.trim());
+            return { name: oName || '기본', price: parseInt(oPrice) || 0 };
+          }).filter(o => o.name && o.price > 0);
+        }
+        if (!options.length) {
+          const price = parseInt(find('가격', '공급가', 'price')) || 0;
+          if (price > 0) options = [{ name: '기본', price }];
+        }
+        if (!options.length) return null;
+
+        return {
+          name,
+          category: find('카테고리', '분류') || '기타',
+          tax: find('과세', '세금') || '비과세',
+          options,
+          shipping: find('배송비') || '수량별배송비',
+          delivery: find('배송방법', '택배'),
+          origin: find('원산지'),
+          note: find('비고', '메모'),
+        };
+      }).filter(Boolean);
+
+      if (!products.length) return toast('유효한 상품이 없습니다');
+
+      if (!confirm(`${products.length}개 상품을 등록하시겠습니까?`)) return;
+
+      let ok = 0, fail = 0;
+      for (const p of products) {
+        try {
+          const fd = new FormData();
+          fd.append('name', p.name);
+          fd.append('category', p.category);
+          fd.append('tax', p.tax);
+          fd.append('options', JSON.stringify(p.options));
+          fd.append('shipping', p.shipping);
+          fd.append('delivery', p.delivery);
+          fd.append('origin', p.origin);
+          fd.append('note', p.note);
+          const d = await fetchRaw(`${API}/ws/product/save`, { method: 'POST', body: fd });
+          if (d.success) ok++; else fail++;
+        } catch { fail++; }
+      }
+      toast(`등록 완료: 성공 ${ok}개 / 실패 ${fail}개`);
+      await loadWsProducts();
+    } catch { toast('엑셀 파싱 실패'); }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+
 // ========================================
 //  공급처: 주문입력
 // ========================================
+function getWsOrderPrice() {
+  const val = $('ws-ord-product').value;
+  if (!val) return 0;
+  const [pid, optIdx] = val.split('__');
+  const p = wsProducts.find(x => String(x.id) === pid);
+  if (!p) return 0;
+  if (optIdx !== undefined && Array.isArray(p.options)) return p.options[parseInt(optIdx)]?.price || 0;
+  return p.price || 0;
+}
+
 function initWsOrderNew() {
-  $('ws-ord-product').onchange = () => {
-    const pid = $('ws-ord-product').value;
-    const p = wsProducts.find(x => String(x.id) === pid);
+  const calcAmt = () => {
+    const price = getWsOrderPrice();
     const qty = parseInt($('ws-ord-qty').value) || 1;
-    $('ws-ord-amount').value = p ? (p.price * qty).toLocaleString() + '원' : '';
+    $('ws-ord-amount').value = price ? (price * qty).toLocaleString() + '원' : '';
   };
-  $('ws-ord-qty').oninput = () => {
-    const pid = $('ws-ord-product').value;
-    const p = wsProducts.find(x => String(x.id) === pid);
-    const qty = parseInt($('ws-ord-qty').value) || 1;
-    $('ws-ord-amount').value = p ? (p.price * qty).toLocaleString() + '원' : '';
-  };
+  $('ws-ord-product').onchange = calcAmt;
+  $('ws-ord-qty').oninput = calcAmt;
   $('btn-ws-ord-submit').onclick = submitWsOrder;
 }
 
 function populateWsOrderProducts() {
   const sel = $('ws-ord-product');
   const curVal = sel.value;
-  sel.innerHTML = '<option value="">상품을 선택하세요</option>' +
-    wsProducts.map(p => `<option value="${p.id}">${esc(p.name)} - ₩${(p.price||0).toLocaleString()}</option>`).join('');
+  let html = '<option value="">상품을 선택하세요</option>';
+  wsProducts.forEach(p => {
+    if (Array.isArray(p.options) && p.options.length) {
+      p.options.forEach((o, i) => {
+        html += `<option value="${p.id}__${i}">${esc(p.name)} - ${esc(o.name)} (₩${(o.price||0).toLocaleString()})</option>`;
+      });
+    } else {
+      html += `<option value="${p.id}">${esc(p.name)} - ₩${(p.price||0).toLocaleString()}</option>`;
+    }
+  });
+  sel.innerHTML = html;
   if (curVal) sel.value = curVal;
 }
 
 async function submitWsOrder() {
   const name = $('ws-ord-name').value.trim();
-  const productId = $('ws-ord-product').value;
+  const val = $('ws-ord-product').value;
   if (!name) return toast('주문자명 입력');
-  if (!productId) return toast('상품 선택');
+  if (!val) return toast('상품 선택');
   if (!$('ws-ord-addr').value.trim()) return toast('배송지 입력');
 
-  const p = wsProducts.find(x => String(x.id) === productId);
+  const [pid, optIdx] = val.split('__');
+  const p = wsProducts.find(x => String(x.id) === pid);
+  const opt = (optIdx !== undefined && Array.isArray(p?.options)) ? p.options[parseInt(optIdx)] : null;
+  const price = opt?.price || p?.price || 0;
+  const productName = opt ? `${p.name} - ${opt.name}` : p?.name || '';
   const qty = parseInt($('ws-ord-qty').value) || 1;
   const btn = $('btn-ws-ord-submit'); btn.disabled = true; btn.textContent = '등록 중...';
   try {
     const d = await post('/ws/order/save', {
       name, phone: $('ws-ord-phone').value, email: $('ws-ord-email').value,
-      address: $('ws-ord-addr').value, productId, productName: p?.name || '',
-      quantity: qty, amount: (p?.price || 0) * qty, memo: $('ws-ord-memo').value
+      address: $('ws-ord-addr').value, productId: pid, productName,
+      quantity: qty, amount: price * qty, memo: $('ws-ord-memo').value
     });
     if (d.success) {
       toast(`주문 등록 완료: ${d.orderNo}`);
@@ -957,6 +1197,7 @@ function renderWsOrders() {
   const statusOpts = ['신규','확인','배송중','완료','취소'];
   $('ws-ord-body').innerHTML = f.length ? f.map(o => `<tr>
     <td><code style="font-size:12px">${esc(o.orderNo || '-')}</code></td>
+    <td>${esc(o.sellerName || '-')}</td>
     <td>${esc(o.name)}</td>
     <td style="max-width:200px">${esc(o.productName || '-')}</td>
     <td style="text-align:center">${o.quantity || 1}</td>
@@ -968,7 +1209,7 @@ function renderWsOrders() {
         ${statusOpts.map(s => `<option value="${s}" ${o.status===s?'selected':''}>${s}</option>`).join('')}
       </select>
     </td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty"><p>주문이 없습니다</p></td></tr>';
+  </tr>`).join('') : '<tr><td colspan="9" class="empty"><p>주문이 없습니다</p></td></tr>';
 }
 
 async function updateWsOrdStatus(id, status) {
@@ -987,6 +1228,427 @@ function downloadWsOrderExcel() {
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '주문');
   XLSX.writeFile(wb, `공급처_주문_${new Date().toISOString().split('T')[0]}.xlsx`);
   toast('엑셀 다운로드');
+}
+
+// ========================================
+//  셀러: 공급처 상품 카탈로그 (열람 전용)
+// ========================================
+let sWsProducts = [], sWsCatFilter = 'all';
+
+function initSellerWsCatalog() {
+  $('s-ws-search').oninput = renderSellerWsCatalog;
+  $('s-ws-cat-tabs').onclick = e => {
+    const tab = e.target.closest('.ws-cat-tab'); if (!tab) return;
+    document.querySelectorAll('#s-ws-cat-tabs .ws-cat-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active'); sWsCatFilter = tab.dataset.cat; renderSellerWsCatalog();
+  };
+  loadSellerWsCatalog();
+}
+
+async function loadSellerWsCatalog() {
+  try {
+    const d = await get('/ws/products');
+    if (d.success) { sWsProducts = d.products || []; renderSellerWsCats(); renderSellerWsCatalog(); }
+  } catch {}
+}
+
+function renderSellerWsCats() {
+  const cats = [...new Set(sWsProducts.map(p => p.category).filter(Boolean))];
+  $('s-ws-cat-tabs').innerHTML = '<button class="ws-cat-tab active" data-cat="all">전체보기</button>' +
+    cats.map(c => `<button class="ws-cat-tab" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
+}
+
+function renderSellerWsCatalog() {
+  const q = ($('s-ws-search').value || '').toLowerCase();
+  let f = sWsProducts;
+  if (sWsCatFilter !== 'all') f = f.filter(p => p.category === sWsCatFilter);
+  if (q) f = f.filter(p => (p.name || '').toLowerCase().includes(q));
+  $('s-ws-total').textContent = `전체상품수 : ${f.length}개`;
+
+  const getMinPrice = p => {
+    if (Array.isArray(p.options) && p.options.length) return Math.min(...p.options.map(o => o.price || 0));
+    return p.price || 0;
+  };
+  const getOptsText = p => {
+    if (Array.isArray(p.options) && p.options.length) return p.options.map(o => `${o.name}: ₩${(o.price||0).toLocaleString()}`).join(' / ');
+    return '';
+  };
+
+  $('s-ws-grid').innerHTML = f.length ? f.map(p => `
+    <div class="ws-prod-card">
+      ${p.tax === '비과세' ? '<span class="ws-tax-badge">비과세</span>' : '<span class="ws-tax-badge" style="background:var(--blue)">과세</span>'}
+      ${p.image ? `<img class="ws-prod-img" src="${esc(p.image)}" alt="${esc(p.name)}">` : '<div class="ws-prod-img-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>'}
+      <div class="ws-prod-info">
+        <div class="ws-prod-name">${esc(p.name)}</div>
+        <div class="ws-prod-price">공급가: <strong>₩${getMinPrice(p).toLocaleString()}~</strong></div>
+        <div class="ws-prod-ship" style="font-size:12px;color:var(--gray-500)">${esc(getOptsText(p))}</div>
+        <div class="ws-prod-ship">배송비: <strong>${esc(p.shipping || '수량별배송비')}</strong></div>
+        <div class="ws-prod-ship">${esc(p.delivery || '')}</div>
+        ${p.origin ? `<div class="ws-prod-ship">원산지: ${esc(p.origin)}</div>` : ''}
+      </div>
+    </div>
+  `).join('') : '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--gray-400)">등록된 상품이 없습니다.</div>';
+}
+
+// ========================================
+//  셀러: 주문 관리 (재발주 시스템 포함)
+// ========================================
+let sellerOrders = [], sellerOrdFilter = 'all', sellerSupplyFilter = 'all';
+let sellerTracking = {}; // orderId → tracking record
+let reorderTargets = []; // selected cancelled trackIds
+
+function initSellerOrders() {
+  $('btn-s-ord-fetch').onclick = fetchSellerOrders;
+  $('s-ord-search').oninput = renderSellerOrders;
+  $('s-ord-check-all').onchange = function() {
+    document.querySelectorAll('.s-ord-cb').forEach(cb => {
+      if (!cb.disabled) cb.checked = this.checked;
+    });
+    updateBulkReorderBtn();
+  };
+  $('s-ord-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#s-ord-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); sellerOrdFilter = c.dataset.s; renderSellerOrders();
+  };
+  $('s-supply-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#s-supply-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); sellerSupplyFilter = c.dataset.s; renderSellerOrders();
+  };
+  $('btn-s-ord-bulk-reorder').onclick = () => {
+    const ids = [...document.querySelectorAll('.s-ord-cb:checked')].map(cb => cb.dataset.trackid).filter(Boolean);
+    if (!ids.length) return toast('공급취소 주문을 선택하세요');
+    openReorderModal(ids);
+  };
+  // 재발주 모달
+  $('reorder-modal-close').onclick = closeReorderModal;
+  $('btn-reorder-cancel').onclick = closeReorderModal;
+  $('reorder-modal').onclick = e => { if (e.target === e.currentTarget) closeReorderModal(); };
+  $('btn-reorder-confirm').onclick = submitReorder;
+}
+
+function updateBulkReorderBtn() {
+  const checked = document.querySelectorAll('.s-ord-cb:checked').length;
+  const btn = $('btn-s-ord-bulk-reorder');
+  if (checked > 0) { btn.classList.remove('hidden'); $('s-ord-checked-count').textContent = checked; }
+  else btn.classList.add('hidden');
+}
+
+async function fetchSellerOrders() {
+  const k = needKeys(); if (!k) return;
+  const btn = $('btn-s-ord-fetch');
+  btn.disabled = true; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 불러오는 중...';
+  try {
+    const from = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    const to = new Date().toISOString().split('T')[0];
+    const [ordRes, trackRes] = await Promise.all([
+      post('/coupang/orders', { ...k, status: 'ALL', createdAtFrom: from, createdAtTo: to }),
+      get(`/order-tracking/${currentUser.uid}`)
+    ]);
+    if (ordRes.success) sellerOrders = ordRes.orders || [];
+    if (trackRes.success) {
+      sellerTracking = {};
+      (trackRes.tracking || []).forEach(t => { sellerTracking[t.orderId] = t; });
+    }
+    renderSellerOrders();
+    toast(`${sellerOrders.length}건 조회`);
+  } catch { toast('서버 연결 실패'); }
+  btn.disabled = false; btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 주문 불러오기';
+}
+
+function getSupplyStatus(orderId) {
+  const t = sellerTracking[String(orderId)];
+  return t ? t.supplyStatus : '미발주';
+}
+
+function renderSellerOrders() {
+  const q = ($('s-ord-search')?.value || '').toLowerCase();
+  let f = sellerOrders;
+  if (sellerOrdFilter !== 'all') f = f.filter(o => o.status === sellerOrdFilter);
+  if (sellerSupplyFilter !== 'all') f = f.filter(o => getSupplyStatus(o.orderId) === sellerSupplyFilter);
+  if (q) f = f.filter(o => (o.productName||'').toLowerCase().includes(q) || (o.receiverName||'').toLowerCase().includes(q) || String(o.orderId).includes(q));
+  $('s-ord-count').textContent = `${f.length}건`;
+
+  const L = { ACCEPT:'결제완료', INSTRUCT:'상품준비중', DEPARTURE:'배송지시', DELIVERING:'배송중', FINAL_DELIVERY:'배송완료', CANCEL:'취소' };
+  const C = { ACCEPT:'blue', INSTRUCT:'orange', DELIVERING:'blue', FINAL_DELIVERY:'green', CANCEL:'red' };
+  const isR = id => reviewTags.has(String(id));
+
+  const supplyBadge = (ss) => {
+    if (ss === '발주완료') return '<span class="badge-supply-ok" style="padding:3px 8px;border-radius:12px;font-size:11px">발주완료 ●</span>';
+    if (ss === '공급취소') return '<span class="badge-supply-cancel" style="padding:3px 8px;border-radius:12px;font-size:11px">공급취소 ●</span>';
+    if (ss === '재발주완료') return '<span class="badge-supply-reorder" style="padding:3px 8px;border-radius:12px;font-size:11px">재발주완료</span>';
+    return '<span class="badge-supply-none" style="padding:3px 8px;border-radius:12px;font-size:11px">미발주</span>';
+  };
+
+  $('s-ord-body').innerHTML = f.length ? f.map(o => {
+    const ss = getSupplyStatus(o.orderId);
+    const track = sellerTracking[String(o.orderId)];
+    const tag = isR(o.orderId) ? '<span class="badge orange" style="font-size:11px">체험단</span>' : '<span class="badge green" style="font-size:11px">실주문</span>';
+    const isCancelled = ss === '공급취소';
+    const rowClass = ss === '공급취소' ? 'supply-cancel' : ss === '발주완료' ? 'supply-ok' : ss === '재발주완료' ? 'supply-reorder' : '';
+    const cancelReason = track?.cancelReason ? `<br><span style="font-size:10px;color:var(--red)">${esc(track.cancelReason)}</span>` : '';
+    return `<tr class="${rowClass}">
+      <td style="text-align:center">
+        ${isCancelled ? `<input type="checkbox" class="s-ord-cb" data-trackid="${esc(track?.id||'')}" style="cursor:pointer" onchange="updateBulkReorderBtn()">` : ''}
+      </td>
+      <td>${tag}</td>
+      <td><code style="font-size:11px">${o.orderId||'-'}</code></td>
+      <td style="max-width:180px;font-size:13px">${esc(o.productName||'-')}</td>
+      <td><span class="badge blue" style="font-size:11px">${esc(o.optionName||'-')}</span></td>
+      <td style="text-align:center">${o.quantity||1}</td>
+      <td style="font-size:13px">${esc(o.receiverName||'-')}</td>
+      <td><span class="badge ${C[o.status]||'gray'}" style="font-size:11px">${L[o.status]||o.status}</span></td>
+      <td>${supplyBadge(ss)}${cancelReason}</td>
+      <td style="font-size:11px">${o.orderDate?new Date(o.orderDate).toLocaleDateString('ko'):'-'}</td>
+      <td>${isCancelled && track ? `<button class="reorder-btn" onclick="openReorderModal(['${track.id}'])">재발주</button>` : ''}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="11" class="empty"><p>주문 불러오기를 눌러주세요</p></td></tr>';
+
+  // 전체선택 상태 초기화
+  $('s-ord-check-all').checked = false;
+  $('btn-s-ord-bulk-reorder').classList.add('hidden');
+}
+
+// ========================================
+//  재발주 모달
+// ========================================
+function openReorderModal(trackIds) {
+  reorderTargets = trackIds;
+  const items = trackIds.map(id => Object.values(sellerTracking).find(t => t.id === id)).filter(Boolean);
+  if (!items.length) return toast('재발주 대상이 없습니다');
+
+  $('reorder-modal-body').innerHTML = `
+    <table class="tbl" style="font-size:13px">
+      <thead><tr><th>상품명</th><th>수령인</th><th>취소사유</th></tr></thead>
+      <tbody>${items.map(t => `<tr>
+        <td>${esc(t.productName||'-')}</td>
+        <td>${esc(t.receiverName||'-')}</td>
+        <td><span style="color:var(--red);font-weight:600">${esc(t.cancelReason||'기타')}</span></td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <p style="font-size:13px;color:var(--gray-500);margin-top:12px">총 <strong>${items.length}건</strong>을 재발주 처리합니다.</p>`;
+  $('reorder-memo').value = '';
+  $('reorder-modal').classList.remove('hidden');
+}
+
+function closeReorderModal() { $('reorder-modal').classList.add('hidden'); reorderTargets = []; }
+
+async function submitReorder() {
+  if (!reorderTargets.length) return;
+  const memo = $('reorder-memo').value.trim();
+  const btn = $('btn-reorder-confirm'); btn.disabled = true; btn.textContent = '처리 중...';
+  try {
+    const d = await post('/order-tracking/reorder', { trackIds: reorderTargets, memo });
+    if (d.success) {
+      toast(`재발주 완료: ${d.count}건`);
+      closeReorderModal();
+      fetchSellerOrders(); // 새로고침
+    } else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+  btn.disabled = false; btn.textContent = '재발주 처리';
+}
+
+// ========================================
+//  셀러: 예치금
+// ========================================
+function initSellerDeposit() {
+  $('btn-s-dep-refresh').onclick = loadSellerDeposit;
+  loadSellerDeposit();
+}
+
+async function loadSellerDeposit() {
+  if (!currentUser) return;
+  try {
+    const [bRes, tRes] = await Promise.all([
+      get(`/deposits/balance/${currentUser.uid}`),
+      get(`/deposits/transactions/${currentUser.uid}`)
+    ]);
+    if (bRes.success) $('s-dep-balance').textContent = `${(bRes.balance || 0).toLocaleString()}원`;
+    if (tRes.success) {
+      const txs = tRes.transactions || [];
+      const typeLabel = t => t === 'charge' ? '충전' : t === 'deduct' ? '차감' : t === 'auto_order' ? '자동발주' : t === 'self_order' ? '자체발주' : t === 'refund' ? '환불' : t;
+      const typeColor = t => t === 'charge' || t === 'refund' ? 'green' : 'red';
+      $('s-dep-body').innerHTML = txs.length ? txs.map(t => `<tr>
+        <td style="font-size:12px">${t.createdAt ? new Date(t.createdAt).toLocaleString('ko') : '-'}</td>
+        <td><span class="badge ${typeColor(t.type)}">${typeLabel(t.type)}</span></td>
+        <td style="text-align:right;font-weight:600;color:${t.amount >= 0 ? 'var(--blue)' : 'var(--red)'}">${t.amount >= 0 ? '+' : ''}${t.amount.toLocaleString()}원</td>
+        <td style="text-align:right">${(t.balance||0).toLocaleString()}원</td>
+        <td>${esc(t.description || '-')}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="empty"><p>거래 내역이 없습니다</p></td></tr>';
+    }
+  } catch {}
+}
+
+// ========================================
+//  관리자: 예치금 관리
+// ========================================
+let adminDepSummary = [], adminDepTxs = [];
+
+function initAdminDeposits() {
+  $('btn-a-dep-refresh').onclick = loadAdminDeposits;
+  loadAdminDeposits();
+}
+
+async function loadAdminDeposits() {
+  try {
+    const d = await get('/admin/deposits');
+    if (d.success) {
+      adminDepSummary = d.summary || [];
+      adminDepTxs = d.transactions || [];
+      renderAdminDeposits();
+    }
+  } catch {}
+}
+
+function renderAdminDeposits() {
+  $('a-dep-body').innerHTML = adminDepSummary.length ? adminDepSummary.map(s => `<tr>
+    <td>${esc(s.loginId)}</td>
+    <td>${esc(s.company)}</td>
+    <td style="text-align:right;font-weight:600">₩${(s.balance||0).toLocaleString()}</td>
+    <td>
+      <div class="btn-row" style="gap:6px">
+        <input type="number" placeholder="금액" class="input-sm dep-amt-${s.uid}" style="width:100px;padding:6px 10px;font-size:12px">
+        <button class="btn-primary" style="padding:6px 12px;font-size:12px" onclick="adminDepCharge('${s.uid}')">충전</button>
+        <button class="btn-danger-sm" style="padding:6px 12px" onclick="adminDepDeduct('${s.uid}')">차감</button>
+      </div>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="4" class="empty"><p>셀러가 없습니다</p></td></tr>';
+
+  const typeLabel = t => t === 'charge' ? '충전' : t === 'deduct' ? '차감' : t === 'auto_order' ? '자동발주' : t === 'self_order' ? '자체발주' : t === 'refund' ? '환불' : t;
+  const typeColor = t => t === 'charge' || t === 'refund' ? 'green' : 'red';
+  const recentTx = adminDepTxs.slice(0, 50);
+  $('a-dep-tx-body').innerHTML = recentTx.length ? recentTx.map(t => {
+    const seller = adminDepSummary.find(s => s.uid === t.userId);
+    return `<tr>
+      <td>${esc(seller?.company || t.userId)}</td>
+      <td style="font-size:12px">${t.createdAt ? new Date(t.createdAt).toLocaleString('ko') : '-'}</td>
+      <td><span class="badge ${typeColor(t.type)}">${typeLabel(t.type)}</span></td>
+      <td style="text-align:right;font-weight:600;color:${t.amount >= 0 ? 'var(--blue)' : 'var(--red)'}">${t.amount >= 0 ? '+' : ''}${t.amount.toLocaleString()}원</td>
+      <td style="text-align:right">${(t.balance||0).toLocaleString()}원</td>
+      <td>${esc(t.description || '-')}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty"><p>거래 내역이 없습니다</p></td></tr>';
+}
+
+async function adminDepCharge(uid) {
+  const input = document.querySelector(`.dep-amt-${uid}`);
+  const amount = parseInt(input?.value);
+  if (!amount || amount <= 0) return toast('충전 금액을 입력하세요');
+  try {
+    const d = await post('/deposits/charge', { userId: uid, amount, description: '관리자 충전' });
+    if (d.success) { toast(`충전 완료: ₩${amount.toLocaleString()}`); input.value = ''; loadAdminDeposits(); }
+    else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+}
+
+async function adminDepDeduct(uid) {
+  const input = document.querySelector(`.dep-amt-${uid}`);
+  const amount = parseInt(input?.value);
+  if (!amount || amount <= 0) return toast('차감 금액을 입력하세요');
+  if (!confirm(`₩${amount.toLocaleString()} 차감하시겠습니까?`)) return;
+  try {
+    const d = await post('/deposits/deduct', { userId: uid, amount, description: '관리자 차감' });
+    if (d.success) { toast(`차감 완료: ₩${amount.toLocaleString()}`); input.value = ''; loadAdminDeposits(); }
+    else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+}
+
+// ========================================
+//  관리자: 발주 추적 관리
+// ========================================
+let adminTracking = [], adminTrackFilter = 'all';
+
+function initAdminOrderTracking() {
+  $('btn-a-track-refresh').onclick = loadAdminOrderTracking;
+  $('btn-a-track-cancel').onclick = submitAdminCancel;
+  $('a-track-search').oninput = renderAdminTracking;
+  $('a-track-chips').onclick = e => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    document.querySelectorAll('#a-track-chips .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active'); adminTrackFilter = c.dataset.s; renderAdminTracking();
+  };
+  loadAdminOrderTracking();
+  loadAdminTrackingSellers();
+}
+
+async function loadAdminTrackingSellers() {
+  try {
+    const d = await post('/auth/users', {});
+    const sellers = (d.users || []).filter(u => u.role === 'seller');
+    $('a-track-seller').innerHTML = '<option value="">셀러를 선택하세요</option>' +
+      sellers.map(u => `<option value="${u.uid}" data-name="${esc(u.company||u.loginId)}">${esc(u.company||u.loginId)} (${esc(u.loginId)})</option>`).join('');
+  } catch {}
+}
+
+async function loadAdminOrderTracking() {
+  try {
+    const d = await get('/admin/order-tracking');
+    if (d.success) { adminTracking = d.tracking || []; renderAdminTracking(); }
+  } catch {}
+}
+
+function renderAdminTracking() {
+  const q = ($('a-track-search')?.value || '').toLowerCase();
+  let f = adminTracking;
+  if (adminTrackFilter !== 'all') f = f.filter(t => t.supplyStatus === adminTrackFilter);
+  if (q) f = f.filter(t => String(t.orderId).includes(q) || (t.sellerName||'').toLowerCase().includes(q) || (t.productName||'').toLowerCase().includes(q));
+  $('a-track-count').textContent = `${f.length}건`;
+
+  const supplyBadge = ss => {
+    if (ss === '발주완료') return `<span class="badge-supply-ok" style="padding:3px 8px;border-radius:12px;font-size:11px">발주완료 ●</span>`;
+    if (ss === '공급취소') return `<span class="badge-supply-cancel" style="padding:3px 8px;border-radius:12px;font-size:11px">공급취소 ●</span>`;
+    if (ss === '재발주완료') return `<span class="badge-supply-reorder" style="padding:3px 8px;border-radius:12px;font-size:11px">재발주완료</span>`;
+    return `<span class="badge-supply-none" style="padding:3px 8px;border-radius:12px;font-size:11px">미발주</span>`;
+  };
+
+  const statusOpts = ['발주완료','공급취소','재발주완료'];
+  $('a-track-body').innerHTML = f.length ? f.map(t => {
+    const rowClass = t.supplyStatus === '공급취소' ? 'supply-cancel' : t.supplyStatus === '발주완료' ? 'supply-ok' : t.supplyStatus === '재발주완료' ? 'supply-reorder' : '';
+    return `<tr class="${rowClass}">
+      <td>${esc(t.sellerName||t.sellerId)}</td>
+      <td><code style="font-size:11px">${esc(t.orderId)}</code></td>
+      <td style="max-width:180px;font-size:13px">${esc(t.productName||'-')}</td>
+      <td>${esc(t.receiverName||'-')}</td>
+      <td>${supplyBadge(t.supplyStatus)}</td>
+      <td style="color:var(--red);font-size:12px">${esc(t.cancelReason||'-')}</td>
+      <td style="font-size:11px">${t.updatedAt?new Date(t.updatedAt).toLocaleDateString('ko'):'-'}</td>
+      <td>
+        <select class="input-sm" style="padding:4px 8px;font-size:11px" onchange="updateAdminTrackStatus('${t.id}',this.value)">
+          ${statusOpts.map(s => `<option value="${s}" ${t.supplyStatus===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty"><p>추적 내역이 없습니다</p></td></tr>';
+}
+
+async function submitAdminCancel() {
+  const sellerId = $('a-track-seller').value;
+  const orderId = $('a-track-orderid').value.trim();
+  const cancelReason = $('a-track-reason').value;
+  if (!sellerId) return toast('셀러를 선택하세요');
+  if (!orderId) return toast('쿠팡 주문번호를 입력하세요');
+
+  const sellerOpt = $('a-track-seller').selectedOptions[0];
+  const sellerName = sellerOpt?.dataset?.name || '';
+  try {
+    const d = await post('/order-tracking/cancel', {
+      orderId, sellerId, sellerName, cancelReason,
+      productName: $('a-track-product').value.trim()
+    });
+    if (d.success) {
+      toast(`공급취소 등록: ${orderId}`);
+      $('a-track-orderid').value = ''; $('a-track-product').value = '';
+      loadAdminOrderTracking();
+    } else toast(d.message || '실패');
+  } catch { toast('서버 연결 실패'); }
+}
+
+async function updateAdminTrackStatus(trackId, status) {
+  try {
+    const d = await post('/order-tracking/update-admin-status', { trackId, status });
+    if (d.success) { const t = adminTracking.find(x => x.id === trackId); if (t) { t.supplyStatus = status; } renderAdminTracking(); toast(`상태 변경: ${status}`); }
+  } catch { toast('실패'); }
 }
 
 // ========================================
