@@ -28,9 +28,10 @@ const F = {
   wsOrders: 'data/ws_orders.json',
   deposits: 'data/deposits.json',
   orderTracking: 'data/order_tracking.json',
+  normalizedOrders: 'data/normalized_orders.json',
 };
 Object.values(F).forEach(f => {
-  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') ? '[]' : '{}', 'utf8');
+  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') || f.includes('normalized') ? '[]' : '{}', 'utf8');
 });
 
 const rj = (file, fb) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fb; } };
@@ -959,6 +960,228 @@ app.post('/api/deposits/settings', (req, res) => {
   data.settings = { ...data.settings, ...req.body };
   wj(F.deposits, data);
   res.json({ success: true });
+});
+
+// ========== 발주 자동화: 쿠팡 주문 → 매핑 필터 → 정규화 저장 ==========
+
+// 모든 셀러의 쿠팡 주문을 가져와 매핑된 상품만 정규화 저장
+app.post('/api/admin/fetch-mapped-orders', async (req, res) => {
+  const { createdAtFrom, createdAtTo } = req.body;
+  const users = rj(F.users, {});
+  const mappings = rj(F.mappings, []);
+  const activeMappings = mappings.filter(m => m.active && m.supplierId);
+
+  if (!activeMappings.length) return res.json({ success: true, saved: 0, message: '활성 매핑 없음' });
+
+  const from = createdAtFrom || new Date(Date.now() - 7 * 864e5).toISOString().split('T')[0];
+  const to = createdAtTo || new Date().toISOString().split('T')[0];
+
+  let existing = rj(F.normalizedOrders, []);
+  if (!Array.isArray(existing)) existing = [];
+  const existingKeys = new Set(existing.map(o => o.key));
+
+  const newOrders = [];
+  const errors = [];
+
+  for (const [uid, seller] of Object.entries(users)) {
+    if (!seller.vendorId || !seller.accessKey || !seller.secretKey) continue;
+    const sellerMappings = activeMappings.filter(m => m.userId === uid);
+    if (!sellerMappings.length) continue;
+
+    const mappedProductIds = new Set(sellerMappings.map(m => String(m.productId)));
+
+    try {
+      const statuses = ['ACCEPT', 'INSTRUCT'];
+      for (const st of statuses) {
+        try {
+          const r = await cpnGet(
+            `/v2/providers/openapi/apis/api/v4/vendors/${seller.vendorId}/ordersheets?status=${st}&createdAtFrom=${from}&createdAtTo=${to}&maxPerPage=100`,
+            seller.secretKey, seller.accessKey, seller.vendorId
+          );
+          const orders = r.data?.data || [];
+          for (const o of orders) {
+            const pid = String(o.sellerProductId || o.vendorItemId || '');
+            const mapping = sellerMappings.find(m =>
+              String(m.productId) === pid ||
+              String(m.productId) === String(o.sellerProductId) ||
+              String(m.productId) === String(o.vendorItemId)
+            );
+            if (!mapping) continue;
+
+            const key = `cpn_${o.shipmentBoxId || o.orderId}`;
+            if (existingKeys.has(key)) continue;
+
+            const productFull = [o.sellerProductName, o.sellerProductItemName].filter(Boolean).join(' / ');
+            const normalized = {
+              id: `poi_${Date.now()}_${Math.random().toString(36).substr(2,6)}`,
+              key,
+              source: 'coupang',
+              sellerId: uid,
+              sellerName: seller.company || seller.loginId || uid,
+              orderId: String(o.orderId || ''),
+              shipmentBoxId: String(o.shipmentBoxId || ''),
+              productId: pid,
+              mappingId: mapping.id,
+              supplierId: mapping.supplierId,
+              supplierName: mapping.supplierName,
+              // 발주서 9개 필드
+              ordererName: o.orderer?.name || '',
+              ordererPhone: o.orderer?.safeNumber || o.orderer?.ordererPhoneNumber || '',
+              senderAddress: o.orderer?.addr || '',
+              productName: productFull,
+              quantity: o.shippingCount || 1,
+              receiverName: o.receiver?.name || '',
+              receiverPhone: o.receiver?.safeNumber || o.receiver?.receiverPhoneNumber1 || '',
+              receiverAddress: ((o.receiver?.addr1 || '') + ' ' + (o.receiver?.addr2 || '')).trim(),
+              deliveryMessage: o.parcelPrintMessage || '',
+              // 메타
+              orderDate: o.orderedAt || '',
+              orderStatus: st,
+              supplyStatus: '미발주',
+              fetchedAt: new Date().toISOString(),
+            };
+            newOrders.push(normalized);
+            existingKeys.add(key);
+          }
+        } catch (e) { errors.push(`${seller.company||uid} [${st}]: ${e.response?.data?.message || e.message}`); }
+      }
+    } catch (e) { errors.push(`${seller.company||uid}: ${e.message}`); }
+  }
+
+  if (newOrders.length) {
+    existing.unshift(...newOrders);
+    wj(F.normalizedOrders, existing);
+  }
+
+  res.json({ success: true, saved: newOrders.length, total: existing.length, errors });
+});
+
+// 정규화 주문 목록 조회
+app.get('/api/admin/normalized-orders', (req, res) => {
+  let list = rj(F.normalizedOrders, []);
+  if (!Array.isArray(list)) list = [];
+  const { supplierId, supplyStatus, from, to } = req.query;
+  if (supplierId) list = list.filter(o => String(o.supplierId) === String(supplierId));
+  if (supplyStatus) list = list.filter(o => o.supplyStatus === supplyStatus);
+  if (from) list = list.filter(o => o.orderDate >= from);
+  if (to) list = list.filter(o => o.orderDate <= to + 'T23:59:59');
+  res.json({ success: true, orders: list, total: list.length });
+});
+
+// 발주 상태 업데이트 (미발주 → 발주완료)
+app.post('/api/admin/normalized-orders/update-status', (req, res) => {
+  const { ids, supplyStatus } = req.body;
+  if (!ids?.length || !supplyStatus) return res.status(400).json({ success: false, message: '필요 데이터 없음' });
+  let list = rj(F.normalizedOrders, []);
+  ids.forEach(id => {
+    const idx = list.findIndex(o => o.id === id);
+    if (idx >= 0) { list[idx].supplyStatus = supplyStatus; list[idx].updatedAt = new Date().toISOString(); }
+  });
+  wj(F.normalizedOrders, list);
+  res.json({ success: true });
+});
+
+// 발주서 엑셀 다운로드 (선택 주문 → 발주서 9개 필드 엑셀)
+app.post('/api/admin/normalized-orders/export-excel', (req, res) => {
+  const { ids, supplierName } = req.body;
+  let list = rj(F.normalizedOrders, []);
+  const targets = ids?.length ? list.filter(o => ids.includes(o.id)) : list;
+  if (!targets.length) return res.status(400).json({ success: false, message: '대상 없음' });
+
+  const rows = targets.map(o => ({
+    '주문자명': o.ordererName,
+    '주문자 전화번호': o.ordererPhone,
+    '보내는분 주소': o.senderAddress,
+    '상품명(옵션포함)': o.productName,
+    '주문건수': o.quantity,
+    '받는분 성명': o.receiverName,
+    '받는분 전화번호': o.receiverPhone,
+    '받는분주소': o.receiverAddress,
+    '배송메시지': o.deliveryMessage,
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  // 컬럼 너비 설정
+  ws['!cols'] = [14,18,30,30,10,14,18,40,30].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '발주서');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const fname = encodeURIComponent(`발주서_${supplierName || '거래처'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${fname}`);
+  res.send(buf);
+});
+
+// ========== 쿠팡 주문서 엑셀 업로드 → 발주서 변환 (테스트용) ==========
+app.post('/api/admin/parse-coupang-excel', excelUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: '파일 없음' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!rows.length) return res.json({ success: false, message: '데이터 없음' });
+
+    const find = (row, ...pats) => {
+      const k = Object.keys(row).find(k => pats.some(p => k.includes(p)));
+      return k ? String(row[k]).trim() : '';
+    };
+
+    const parsed = rows.map((row, i) => {
+      const productName = find(row, '등록상품명', '노출상품명', '상품명');
+      const optionName = find(row, '등록옵션명', '옵션명', '옵션');
+      const productFull = [productName, optionName].filter(Boolean).join(' / ');
+      return {
+        id: `excel_${Date.now()}_${i}`,
+        source: 'coupang_excel',
+        ordererName: find(row, '구매자'),
+        ordererPhone: find(row, '구매자전화번호', '구매자 전화번호'),
+        senderAddress: '',
+        productName: productFull,
+        quantity: parseInt(find(row, '구매수', '수량')) || 1,
+        receiverName: find(row, '수취인이름', '수취인명', '수취인'),
+        receiverPhone: find(row, '수취인전화번호', '수취인 전화번호'),
+        receiverAddress: find(row, '수취인 주소', '주소'),
+        deliveryMessage: find(row, '배송메세지', '배송메시지'),
+        orderId: find(row, '주문번호'),
+        supplyStatus: '미발주',
+      };
+    }).filter(r => r.receiverName || r.orderId);
+
+    res.json({ success: true, orders: parsed, total: parsed.length });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// 파싱된 주문 → 발주서 엑셀 다운로드
+app.post('/api/admin/excel-to-purchase-order', (req, res) => {
+  const { orders, supplierName } = req.body;
+  if (!orders?.length) return res.status(400).json({ success: false, message: '데이터 없음' });
+
+  const rows = orders.map(o => ({
+    '주문자명': o.ordererName || '',
+    '주문자 전화번호': o.ordererPhone || '',
+    '보내는분 주소': o.senderAddress || '',
+    '상품명(옵션포함)': o.productName || '',
+    '주문건수': o.quantity || 1,
+    '받는분 성명': o.receiverName || '',
+    '받는분 전화번호': o.receiverPhone || '',
+    '받는분주소': o.receiverAddress || '',
+    '배송메세지': o.deliveryMessage || '',
+    '택배사': '',
+    '운송장': '',
+    '주문번호': o.orderId || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [14,18,30,30,10,14,18,40,30,12,16,20].map(w => ({ wch: w }));
+  const wbOut = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbOut, ws, '발주서');
+  const buf = XLSX.write(wbOut, { type: 'buffer', bookType: 'xlsx' });
+
+  const fname = encodeURIComponent(`발주서_${supplierName || '거래처'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${fname}`);
+  res.send(buf);
 });
 
 // ===== Start =====

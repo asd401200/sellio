@@ -85,8 +85,8 @@ async function enterApp() {
   if (currentUser.role === 'admin') {
     $('app-admin').classList.remove('hidden');
     $('a-name').textContent = currentUser.company || '관리자';
-    initAdminNav(); initAdminDash(); initAdminSupReq(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice(); initAdminSettings();
-    initWsProducts(); initWsOrderNew(); initWsOrders(); initAdminDeposits(); initAdminOrderTracking();
+    initAdminNav(); initAdminDash(); initAdminPO(); initAdminInvoice(); initAdminReview(); initAdminRvInvoice(); initAdminSettings();
+    initAdminDeposits(); initAdminOrderTracking();
     loadAdminDash(); loadSolapiConfig();
   } else {
     $('app-seller').classList.remove('hidden');
@@ -564,11 +564,233 @@ async function loadAdminDash() {
 function renderAdminSellers() {
   $('a-sellers-body').innerHTML = allUsers.length ? allUsers.map(u => `<tr><td>${esc(u.loginId)}</td><td>${esc(u.company||'-')}</td><td>${esc(u.ceo||'-')}</td><td>${esc(u.mobile||'-')}</td><td>${esc(u.email||'-')}</td><td>${u.vendorId||'-'}</td><td><span class="badge ${u.hasApiKeys?'green':'red'}">${u.hasApiKeys?'연결':'미연결'}</span></td><td>${u.createdAt?new Date(u.createdAt).toLocaleDateString('ko'):'-'}</td></tr>`).join('') : '<tr><td colspan="8" class="empty"><p>셀러 없음</p></td></tr>';
 }
-function initAdminPO() { $('btn-a-load-po').onclick = async () => {
-  const btn = $('btn-a-load-po'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  try { const d = await get('/admin/purchase-order'); if (d.success) { const po = d.purchaseOrder||{}, keys = Object.keys(po); $('a-po-content').innerHTML = keys.length ? keys.map(sid => { const g = po[sid]; return `<div class="card" style="margin-top:16px"><div class="card-header"><h3>${esc(g.supplier?.name||'?')}</h3><span class="badge blue">${g.items.length}개</span></div><table class="tbl"><thead><tr><th>셀러</th><th>상품명</th><th>옵션</th><th>판매가</th></tr></thead><tbody>${g.items.map(it=>`<tr><td>${esc(it.userId||'-')}</td><td>${esc(it.productName)}</td><td>${esc(it.option||'-')}</td><td>${it.salePrice?it.salePrice.toLocaleString()+'원':'-'}</td></tr>`).join('')}</tbody></table></div>`; }).join('') : '<div class="card" style="margin-top:16px;padding:40px;text-align:center;color:#999">매핑 없음</div>'; } } catch { toast('실패'); }
-  btn.disabled = false; btn.textContent = '발주서 생성';
-}; }
+// ===== 통합 발주서 =====
+let poStatusFilter = 'all';
+let poChecked = new Set();
+
+function initAdminPO() {
+  initCoupangExcelUpload();
+  // 상태 필터 칩
+  document.querySelectorAll('#a-po-status-chips .chip').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#a-po-status-chips .chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      poStatusFilter = btn.dataset.s;
+      loadPoOrders();
+    };
+  });
+
+  // 검색 버튼
+  $('btn-a-po-filter').onclick = () => loadPoOrders();
+
+  // 주문 불러오기 (쿠팡 API 호출)
+  $('btn-a-po-refresh').onclick = async () => {
+    const btn = $('btn-a-po-refresh');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 불러오는 중...';
+    try {
+      const d = await post('/admin/fetch-mapped-orders', {});
+      if (d.success) {
+        toast(`${d.saved}건 새로 수집 (총 ${d.total}건)${d.errors?.length ? ' / 오류:' + d.errors.length : ''}`);
+        await loadPoOrders();
+      } else { toast(d.message || '실패'); }
+    } catch (e) { toast('오류: ' + e.message); }
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg> 주문 불러오기';
+  };
+
+  // 선택 엑셀 다운로드
+  $('btn-a-po-excel-all').onclick = () => downloadPoExcel([...poChecked]);
+
+  loadPoOrders();
+}
+
+async function loadPoOrders() {
+  const content = $('a-po-content');
+  content.innerHTML = '<div style="padding:40px;text-align:center"><span class="spinner"></span></div>';
+  poChecked.clear();
+  try {
+    const qs = new URLSearchParams();
+    if (poStatusFilter !== 'all') qs.set('supplyStatus', poStatusFilter);
+    const from = $('a-po-from').value, to = $('a-po-to').value;
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    const d = await fetchRaw(`${API}/admin/normalized-orders?${qs}`);
+    if (!d.success) { content.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:#999">불러오기 실패</div>'; return; }
+    const orders = d.orders || [];
+    if (!orders.length) { content.innerHTML = '<div class="card" style="margin-top:4px;padding:40px;text-align:center;color:#999">주문 없음 — "주문 불러오기"를 눌러주세요</div>'; $('btn-a-po-excel-all').classList.add('hidden'); return; }
+
+    // 거래처별 그룹핑
+    const grouped = {};
+    orders.forEach(o => {
+      const key = o.supplierId || 'unknown';
+      if (!grouped[key]) grouped[key] = { name: o.supplierName || '거래처 미지정', items: [] };
+      grouped[key].items.push(o);
+    });
+
+    content.innerHTML = Object.entries(grouped).map(([sid, g]) => `
+      <div class="card" style="margin-top:16px">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;align-items:center;gap:10px">
+            <h3>${esc(g.name)}</h3>
+            <span class="badge blue">${g.items.length}건</span>
+          </div>
+          <div class="btn-row" style="gap:8px">
+            <button class="btn-outline btn-sm" onclick="markPoStatus('${sid}', '발주완료')">발주완료 처리</button>
+            <button class="btn-primary btn-sm" onclick="downloadPoExcelBySupplier('${sid}', '${esc(g.name)}')">엑셀 다운로드</button>
+          </div>
+        </div>
+        <table class="tbl">
+          <thead><tr>
+            <th><input type="checkbox" onchange="togglePoGroup('${sid}', this.checked)"></th>
+            <th>상태</th><th>주문자명</th><th>상품명(옵션포함)</th><th>수량</th>
+            <th>받는분</th><th>받는분 전화</th><th>받는분 주소</th><th>배송메시지</th><th>주문일</th>
+          </tr></thead>
+          <tbody>${g.items.map(o => `
+            <tr data-id="${o.id}" data-sid="${sid}">
+              <td><input type="checkbox" class="po-chk" data-id="${o.id}" onchange="onPoChk(this)"></td>
+              <td><span class="badge ${o.supplyStatus==='발주완료'?'green':'red'}">${esc(o.supplyStatus)}</span></td>
+              <td>${esc(o.ordererName||'-')}</td>
+              <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.productName)}">${esc(o.productName)}</td>
+              <td style="text-align:center">${o.quantity}</td>
+              <td>${esc(o.receiverName||'-')}</td>
+              <td>${esc(o.receiverPhone||'-')}</td>
+              <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.receiverAddress)}">${esc(o.receiverAddress||'-')}</td>
+              <td>${esc(o.deliveryMessage||'-')}</td>
+              <td>${o.orderDate?o.orderDate.slice(0,10):'-'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`).join('');
+
+    $('btn-a-po-excel-all').classList.remove('hidden');
+  } catch (e) { content.innerHTML = '<div class="card" style="padding:40px;text-align:center;color:#999">오류</div>'; console.error(e); }
+}
+
+function onPoChk(el) {
+  if (el.checked) poChecked.add(el.dataset.id);
+  else poChecked.delete(el.dataset.id);
+  $('btn-a-po-excel-all').textContent = poChecked.size ? `선택(${poChecked.size}) 엑셀 다운로드` : '선택 엑셀 다운로드';
+}
+
+function togglePoGroup(sid, checked) {
+  document.querySelectorAll(`.po-chk`).forEach(el => {
+    const row = el.closest('tr');
+    if (row && row.dataset.sid === sid) {
+      el.checked = checked;
+      if (checked) poChecked.add(el.dataset.id);
+      else poChecked.delete(el.dataset.id);
+    }
+  });
+  $('btn-a-po-excel-all').textContent = poChecked.size ? `선택(${poChecked.size}) 엑셀 다운로드` : '선택 엑셀 다운로드';
+}
+
+async function markPoStatus(sid, status) {
+  const rows = document.querySelectorAll(`tr[data-sid="${sid}"]`);
+  const ids = [...rows].map(r => r.dataset.id);
+  if (!ids.length) return;
+  try {
+    const d = await post('/admin/normalized-orders/update-status', { ids, supplyStatus: status });
+    if (d.success) { toast(`${ids.length}건 ${status} 처리`); await loadPoOrders(); }
+  } catch { toast('실패'); }
+}
+
+async function downloadPoExcel(ids) {
+  if (!ids.length) return toast('선택 없음');
+  try {
+    const res = await fetch(`${API}/admin/normalized-orders/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, supplierName: '선택' })
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `발주서_${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch { toast('다운로드 실패'); }
+}
+
+async function downloadPoExcelBySupplier(sid, name) {
+  const rows = document.querySelectorAll(`tr[data-sid="${sid}"]`);
+  const ids = [...rows].map(r => r.dataset.id);
+  if (!ids.length) return toast('주문 없음');
+  try {
+    const res = await fetch(`${API}/admin/normalized-orders/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, supplierName: name })
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `발주서_${name}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch { toast('다운로드 실패'); }
+}
+// ===== 쿠팡 주문서 엑셀 업로드 테스트 =====
+let parsedCoupangOrders = [];
+
+function initCoupangExcelUpload() {
+  $('a-po-excel-input').onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $('a-po-excel-fname').textContent = file.name;
+    $('btn-a-po-excel-download').classList.add('hidden');
+    $('a-po-excel-preview').innerHTML = '<span class="spinner"></span> 파싱 중...';
+
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const d = await fetchRaw(`${API}/admin/parse-coupang-excel`, { method: 'POST', body: fd });
+      if (!d.success) { toast(d.message || '파싱 실패'); $('a-po-excel-preview').innerHTML = ''; return; }
+      parsedCoupangOrders = d.orders || [];
+      toast(`${d.total}건 파싱 완료`);
+
+      $('a-po-excel-preview').innerHTML = `
+        <p style="font-size:13px;color:#666;margin-bottom:10px">총 <strong>${d.total}건</strong> 파싱됨 — 미리보기 (최대 5건)</p>
+        <div style="overflow-x:auto">
+        <table class="tbl" style="font-size:12px">
+          <thead><tr>
+            <th>주문자명</th><th>상품명(옵션포함)</th><th>수량</th>
+            <th>받는분</th><th>받는분 전화</th><th>받는분 주소</th><th>배송메시지</th><th>주문번호</th>
+          </tr></thead>
+          <tbody>${parsedCoupangOrders.slice(0,5).map(o => `
+            <tr>
+              <td>${esc(o.ordererName||'-')}</td>
+              <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.productName)}">${esc(o.productName||'-')}</td>
+              <td style="text-align:center">${o.quantity}</td>
+              <td>${esc(o.receiverName||'-')}</td>
+              <td>${esc(o.receiverPhone||'-')}</td>
+              <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.receiverAddress)}">${esc(o.receiverAddress||'-')}</td>
+              <td>${esc(o.deliveryMessage||'-')}</td>
+              <td style="font-size:11px"><code>${esc(o.orderId||'-')}</code></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+      $('btn-a-po-excel-download').classList.remove('hidden');
+    } catch(err) { toast('오류: ' + err.message); $('a-po-excel-preview').innerHTML = ''; }
+    e.target.value = '';
+  };
+
+  $('btn-a-po-excel-download').onclick = async () => {
+    if (!parsedCoupangOrders.length) return toast('먼저 파일을 업로드하세요');
+    try {
+      const res = await fetch(`${API}/admin/excel-to-purchase-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: parsedCoupangOrders, supplierName: '거래처' })
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `발주서_${new Date().toISOString().slice(0,10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('발주서 다운로드 완료');
+    } catch { toast('다운로드 실패'); }
+  };
+}
+
 function initAdminInvoice() { $('a-inv-file').onchange = async e => { const file = e.target.files[0]; if (!file) return; $('a-inv-fname').textContent = file.name; const fd = new FormData(); fd.append('file', file); try { const d = await fetchRaw(`${API}/invoice/parse-excel`, { method: 'POST', body: fd }); if (d.success&&d.data.length) { $('a-inv-result').classList.remove('hidden'); $('a-inv-result').dataset.parsed = JSON.stringify(d.data); $('a-inv-body').innerHTML = d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td>${esc(r.productName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join(''); toast(`${d.data.length}건`); } } catch { toast('파싱 실패'); } e.target.value = ''; };
   $('btn-a-apply-inv').onclick = async () => { const ps=$('a-inv-result').dataset.parsed; if (!ps) return toast('엑셀 먼저'); const parsed=JSON.parse(ps).filter(r=>r.invoiceNumber&&r.orderId); if (!parsed.length) return toast('송장 없음'); const btn=$('btn-a-apply-inv'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>'; const courier=$('a-inv-courier').value, users=await get('/admin/users'), sellers=(users.users||[]).filter(u=>u.role==='seller'&&u.hasApiKeys); let ts=0,tf=0; for (const s of sellers) { try { const d=await post('/admin/invoice-for-seller',{sellerUid:s.uid,invoices:parsed.map(r=>({shipmentBoxId:r.orderId,invoiceNumber:r.invoiceNumber,deliveryCompanyCode:courier})),deliveryCompanyCode:courier}); if(d.success){ts+=d.summary.success;tf+=d.summary.fail;} } catch{tf+=parsed.length;} } toast(`성공:${ts} 실패:${tf}`); btn.disabled=false; btn.textContent='전체 송장 등록 실행'; }; }
 let kakaoText = '';
