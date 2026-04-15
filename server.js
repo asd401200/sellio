@@ -222,6 +222,48 @@ app.post('/api/user/load-keys', (req, res) => {
   res.json({ success: true, keys: d?.vendorId ? { vendorId: d.vendorId, accessKey: d.accessKey, secretKey: d.secretKey } : null });
 });
 
+// 네이버 커머스 API 키 저장/로드/테스트
+app.post('/api/user/save-naver-keys', (req, res) => {
+  const { userId, clientId, clientSecret } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: 'userId 필요' });
+  const u = rj(F.users, {}); if (!u[userId]) u[userId] = {};
+  u[userId].naverClientId = clientId;
+  u[userId].naverClientSecret = clientSecret;
+  wj(F.users, u);
+  res.json({ success: true });
+});
+
+app.post('/api/user/load-naver-keys', (req, res) => {
+  const u = rj(F.users, {}); const d = u[req.body.userId];
+  res.json({ success: true, keys: d?.naverClientId ? { clientId: d.naverClientId, clientSecret: d.naverClientSecret } : null });
+});
+
+// 네이버 커머스 API 연결 테스트 (OAuth2 client_credentials 방식 서명)
+app.post('/api/naver/test', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
+  if (!clientId || !clientSecret) return res.status(400).json({ success: false, message: '모든 항목 입력' });
+  try {
+    const bcrypt = require('bcryptjs');
+    const timestamp = Date.now();
+    const password = `${clientId}_${timestamp}`;
+    const hashed = bcrypt.hashSync(password, clientSecret);
+    const clientSecretSign = Buffer.from(hashed).toString('base64');
+    const params = new URLSearchParams();
+    params.append('client_id', clientId);
+    params.append('timestamp', timestamp);
+    params.append('client_secret_sign', clientSecretSign);
+    params.append('grant_type', 'client_credentials');
+    params.append('type', 'SELF');
+    const r = await axios.post('https://api.commerce.naver.com/external/v1/oauth2/token', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    if (r.data?.access_token) return res.json({ success: true });
+    res.status(400).json({ success: false, message: '토큰 발급 실패' });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.response?.data?.message || e.response?.data?.error_description || e.message });
+  }
+});
+
 // ========== 관리자 ==========
 app.get('/api/admin/users', (req, res) => {
   const u = rj(F.users, {});
@@ -1144,6 +1186,56 @@ app.post('/api/admin/parse-coupang-excel', excelUpload.single('file'), (req, res
         receiverAddress: find(row, '수취인 주소', '주소'),
         deliveryMessage: find(row, '배송메세지', '배송메시지'),
         orderId: find(row, '주문번호'),
+        supplyStatus: '미발주',
+      };
+    }).filter(r => r.receiverName || r.orderId);
+
+    res.json({ success: true, orders: parsed, total: parsed.length });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+// 네이버 스마트스토어 주문서 엑셀 파싱
+app.post('/api/admin/parse-naver-excel', excelUpload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: '파일 없음' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    // 네이버 주문서는 상단에 안내문구가 있어 헤더 행을 자동 탐색
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    let headerIdx = raw.findIndex(row => Array.isArray(row) && row.some(c => String(c).trim() === '상품주문번호'));
+    if (headerIdx < 0) return res.json({ success: false, message: '헤더 찾기 실패 (상품주문번호 없음)' });
+    const headers = raw[headerIdx].map(h => String(h).trim());
+    const rows = raw.slice(headerIdx + 1).filter(r => r.some(c => c !== '')).map(r => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = r[i] !== undefined ? r[i] : ''; });
+      return obj;
+    });
+    if (!rows.length) return res.json({ success: false, message: '데이터 없음' });
+
+    const find = (row, ...pats) => {
+      const k = Object.keys(row).find(k => pats.some(p => k.includes(p)));
+      return k ? String(row[k]).trim() : '';
+    };
+
+    const parsed = rows.map((row, i) => {
+      const productName = find(row, '상품명');
+      const optionName = find(row, '옵션정보', '옵션');
+      const productFull = [productName, optionName].filter(v => v && v !== '-').join(' / ');
+      let address = find(row, '통합배송지');
+      if (!address) address = [find(row, '기본배송지'), find(row, '상세배송지')].filter(Boolean).join(' ');
+      return {
+        id: `naver_${Date.now()}_${i}`,
+        source: 'naver_excel',
+        ordererName: find(row, '구매자명', '구매자'),
+        ordererPhone: find(row, '구매자연락처'),
+        senderAddress: '',
+        productName: productFull,
+        quantity: parseInt(find(row, '수량')) || 1,
+        receiverName: find(row, '수취인명'),
+        receiverPhone: find(row, '수취인연락처1', '수취인연락처'),
+        receiverAddress: address,
+        deliveryMessage: find(row, '배송메세지', '배송메시지'),
+        orderId: find(row, '상품주문번호') || find(row, '주문번호'),
         supplyStatus: '미발주',
       };
     }).filter(r => r.receiverName || r.orderId);

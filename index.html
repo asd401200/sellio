@@ -167,6 +167,22 @@
             <div class="btn-row" style="margin-top:24px"><button class="btn-outline" id="btn-s-test">테스트</button><button class="btn-primary" id="btn-s-save-api">저장</button></div>
             <div class="api-status hidden" id="s-api-msg"></div>
           </div>
+
+          <!-- 네이버 커머스 API -->
+          <div class="card form-card-lg" style="margin-top:16px">
+            <div class="api-guide">
+              <div class="guide-step"><span class="step-num">1</span><div><strong>네이버 커머스API 센터 접속</strong><p>애플리케이션 등록 후 Client ID / Secret 발급</p></div></div>
+              <div class="guide-step"><span class="step-num">2</span><div><strong>API 키 입력</strong></div></div>
+              <div class="guide-step"><span class="step-num">3</span><div><strong>연결 테스트</strong></div></div>
+            </div>
+            <div class="form-divider"></div>
+            <div class="form-grid" style="margin-top:24px">
+              <div class="field full"><label>네이버 Client ID</label><input type="text" placeholder="Client ID" id="s-naver-cid"></div>
+              <div class="field full"><label>네이버 Client Secret</label><input type="password" placeholder="Client Secret" id="s-naver-cs"></div>
+            </div>
+            <div class="btn-row" style="margin-top:24px"><button class="btn-outline" id="btn-s-naver-test">테스트</button><button class="btn-primary" id="btn-s-naver-save">저장</button></div>
+            <div class="api-status hidden" id="s-naver-msg"></div>
+          </div>
         </div>
         <div id="tab-set-supplier" class="hidden">
           <div class="card" style="margin-top:12px">
@@ -368,13 +384,18 @@
           </div>
           <div style="padding:16px 24px">
             <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-              <label class="btn-outline file-btn" style="cursor:pointer">
-                쿠팡 주문서 업로드 (.xlsx)
+              <label class="btn-outline file-btn" style="cursor:pointer;border-color:#ff6b35;color:#ff6b35">
+                🅒 쿠팡 주문서 업로드 (.xlsx)
                 <input type="file" id="a-po-excel-input" accept=".xlsx,.xls" hidden>
               </label>
-              <span id="a-po-excel-fname" style="font-size:13px;color:#888">파일 선택 안됨</span>
-              <button class="btn-primary hidden" id="btn-a-po-excel-download">발주서 엑셀 다운로드</button>
+              <label class="btn-outline file-btn" style="cursor:pointer;border-color:#03c75a;color:#03c75a">
+                🅝 네이버 주문서 업로드 (.xlsx)
+                <input type="file" id="a-po-naver-input" accept=".xlsx,.xls" hidden>
+              </label>
+              <button class="btn-outline" id="btn-a-po-excel-clear" style="padding:8px 14px;font-size:13px">초기화</button>
+              <button class="btn-primary hidden" id="btn-a-po-excel-download">통합 발주서 엑셀 다운로드</button>
             </div>
+            <div id="a-po-excel-fname" style="font-size:13px;color:#888;margin-top:10px">업로드된 파일 없음</div>
             <div id="a-po-excel-preview" style="margin-top:16px"></div>
           </div>
         </div>
@@ -629,6 +650,6 @@
 
   <div class="toast hidden" id="toast"><span id="toast-msg"></span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

@@ -524,6 +524,35 @@ function initSettings() {
     if (currentUser) try { await post('/user/save-keys', { userId: currentUser.uid, vendorId: v, accessKey: a, secretKey: s }); } catch {}
     $('s-sub').textContent = `셀러 #${v}`; toast('API 키 저장 완료');
   };
+  // ===== 네이버 커머스 API =====
+  const naverKeys = JSON.parse(localStorage.getItem('sellio_naver_api') || 'null');
+  if (naverKeys) { $('s-naver-cid').value = naverKeys.clientId || ''; $('s-naver-cs').value = naverKeys.clientSecret || ''; }
+  if (currentUser) {
+    post('/user/load-naver-keys', { userId: currentUser.uid }).then(d => {
+      if (d?.keys) {
+        $('s-naver-cid').value = d.keys.clientId || '';
+        $('s-naver-cs').value = d.keys.clientSecret || '';
+      }
+    }).catch(()=>{});
+  }
+  $('btn-s-naver-test').onclick = async () => {
+    const cid = $('s-naver-cid').value.trim(), cs = $('s-naver-cs').value.trim(), msg = $('s-naver-msg');
+    if (!cid || !cs) { msg.className = 'api-status error'; msg.textContent = '모든 항목 입력'; msg.classList.remove('hidden'); return; }
+    msg.className = 'api-status'; msg.textContent = '테스트 중...'; msg.classList.remove('hidden');
+    try {
+      const d = await post('/naver/test', { clientId: cid, clientSecret: cs });
+      msg.className = `api-status ${d.success ? 'success' : 'error'}`;
+      msg.textContent = d.success ? '네이버 연결 성공!' : (d.message || '실패');
+    } catch { msg.className = 'api-status error'; msg.textContent = '서버 연결 실패'; }
+  };
+  $('btn-s-naver-save').onclick = async () => {
+    const cid = $('s-naver-cid').value.trim(), cs = $('s-naver-cs').value.trim();
+    if (!cid || !cs) return toast('모든 항목 입력');
+    localStorage.setItem('sellio_naver_api', JSON.stringify({ clientId: cid, clientSecret: cs }));
+    if (currentUser) try { await post('/user/save-naver-keys', { userId: currentUser.uid, clientId: cid, clientSecret: cs }); } catch {}
+    toast('네이버 API 키 저장 완료');
+  };
+
   $('btn-s-req-submit').onclick = submitSupReq;
   loadSupReqs();
 }
@@ -725,68 +754,111 @@ async function downloadPoExcelBySupplier(sid, name) {
     a.click(); URL.revokeObjectURL(url);
   } catch { toast('다운로드 실패'); }
 }
-// ===== 쿠팡 주문서 엑셀 업로드 테스트 =====
-let parsedCoupangOrders = [];
+// ===== 쿠팡/네이버 주문서 엑셀 업로드 → 통합 발주서 =====
+let parsedUnifiedOrders = []; // [{source:'coupang'|'naver', ...}]
+let uploadedFiles = { coupang: null, naver: null };
+
+function renderUnifiedPreview() {
+  const box = $('a-po-excel-preview');
+  const fnameBox = $('a-po-excel-fname');
+  const parts = [];
+  if (uploadedFiles.coupang) parts.push(`🅒 ${uploadedFiles.coupang}`);
+  if (uploadedFiles.naver) parts.push(`🅝 ${uploadedFiles.naver}`);
+  fnameBox.innerHTML = parts.length ? parts.join(' &nbsp;·&nbsp; ') : '업로드된 파일 없음';
+
+  if (!parsedUnifiedOrders.length) {
+    box.innerHTML = '';
+    $('btn-a-po-excel-download').classList.add('hidden');
+    return;
+  }
+  const coupangCnt = parsedUnifiedOrders.filter(o => o.source === 'coupang_excel').length;
+  const naverCnt = parsedUnifiedOrders.filter(o => o.source === 'naver_excel').length;
+  const badgeOf = s => s === 'coupang_excel'
+    ? '<span class="badge" style="background:#fff1eb;color:#ff6b35">쿠팡</span>'
+    : '<span class="badge" style="background:#e7f9ee;color:#03c75a">네이버</span>';
+  box.innerHTML = `
+    <p style="font-size:13px;color:#666;margin-bottom:10px">
+      총 <strong>${parsedUnifiedOrders.length}건</strong>
+      (쿠팡 ${coupangCnt}건 / 네이버 ${naverCnt}건) — 미리보기 10건
+    </p>
+    <div style="overflow-x:auto">
+    <table class="tbl" style="font-size:12px">
+      <thead><tr>
+        <th style="width:60px">출처</th><th>주문자명</th><th>상품명(옵션포함)</th><th>수량</th>
+        <th>받는분</th><th>받는분 전화</th><th>받는분 주소</th><th>배송메시지</th><th>주문번호</th>
+      </tr></thead>
+      <tbody>${parsedUnifiedOrders.slice(0,10).map(o => `
+        <tr>
+          <td>${badgeOf(o.source)}</td>
+          <td>${esc(o.ordererName||'-')}</td>
+          <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.productName)}">${esc(o.productName||'-')}</td>
+          <td style="text-align:center">${o.quantity}</td>
+          <td>${esc(o.receiverName||'-')}</td>
+          <td>${esc(o.receiverPhone||'-')}</td>
+          <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.receiverAddress)}">${esc(o.receiverAddress||'-')}</td>
+          <td>${esc(o.deliveryMessage||'-')}</td>
+          <td style="font-size:11px"><code>${esc(o.orderId||'-')}</code></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>`;
+  $('btn-a-po-excel-download').classList.remove('hidden');
+}
+
+async function uploadOrderExcel(file, kind) {
+  const endpoint = kind === 'naver' ? '/admin/parse-naver-excel' : '/admin/parse-coupang-excel';
+  $('a-po-excel-preview').innerHTML = '<span class="spinner"></span> 파싱 중...';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const d = await fetchRaw(`${API}${endpoint}`, { method: 'POST', body: fd });
+    if (!d.success) { toast(d.message || '파싱 실패'); renderUnifiedPreview(); return; }
+    // 같은 출처의 기존 데이터 제거 후 추가 (재업로드 시 중복 방지)
+    const sourceTag = kind === 'naver' ? 'naver_excel' : 'coupang_excel';
+    parsedUnifiedOrders = parsedUnifiedOrders.filter(o => o.source !== sourceTag);
+    parsedUnifiedOrders.push(...(d.orders || []));
+    uploadedFiles[kind] = file.name;
+    toast(`${kind === 'naver' ? '네이버' : '쿠팡'} ${d.total}건 파싱 완료`);
+    renderUnifiedPreview();
+  } catch(err) { toast('오류: ' + err.message); renderUnifiedPreview(); }
+}
 
 function initCoupangExcelUpload() {
   $('a-po-excel-input').onchange = async e => {
     const file = e.target.files[0];
     if (!file) return;
-    $('a-po-excel-fname').textContent = file.name;
-    $('btn-a-po-excel-download').classList.add('hidden');
-    $('a-po-excel-preview').innerHTML = '<span class="spinner"></span> 파싱 중...';
-
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const d = await fetchRaw(`${API}/admin/parse-coupang-excel`, { method: 'POST', body: fd });
-      if (!d.success) { toast(d.message || '파싱 실패'); $('a-po-excel-preview').innerHTML = ''; return; }
-      parsedCoupangOrders = d.orders || [];
-      toast(`${d.total}건 파싱 완료`);
-
-      $('a-po-excel-preview').innerHTML = `
-        <p style="font-size:13px;color:#666;margin-bottom:10px">총 <strong>${d.total}건</strong> 파싱됨 — 미리보기 (최대 5건)</p>
-        <div style="overflow-x:auto">
-        <table class="tbl" style="font-size:12px">
-          <thead><tr>
-            <th>주문자명</th><th>상품명(옵션포함)</th><th>수량</th>
-            <th>받는분</th><th>받는분 전화</th><th>받는분 주소</th><th>배송메시지</th><th>주문번호</th>
-          </tr></thead>
-          <tbody>${parsedCoupangOrders.slice(0,5).map(o => `
-            <tr>
-              <td>${esc(o.ordererName||'-')}</td>
-              <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.productName)}">${esc(o.productName||'-')}</td>
-              <td style="text-align:center">${o.quantity}</td>
-              <td>${esc(o.receiverName||'-')}</td>
-              <td>${esc(o.receiverPhone||'-')}</td>
-              <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(o.receiverAddress)}">${esc(o.receiverAddress||'-')}</td>
-              <td>${esc(o.deliveryMessage||'-')}</td>
-              <td style="font-size:11px"><code>${esc(o.orderId||'-')}</code></td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-        </div>`;
-      $('btn-a-po-excel-download').classList.remove('hidden');
-    } catch(err) { toast('오류: ' + err.message); $('a-po-excel-preview').innerHTML = ''; }
+    await uploadOrderExcel(file, 'coupang');
     e.target.value = '';
+  };
+  $('a-po-naver-input').onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await uploadOrderExcel(file, 'naver');
+    e.target.value = '';
+  };
+  $('btn-a-po-excel-clear').onclick = () => {
+    parsedUnifiedOrders = [];
+    uploadedFiles = { coupang: null, naver: null };
+    renderUnifiedPreview();
+    toast('초기화 완료');
   };
 
   $('btn-a-po-excel-download').onclick = async () => {
-    if (!parsedCoupangOrders.length) return toast('먼저 파일을 업로드하세요');
+    if (!parsedUnifiedOrders.length) return toast('먼저 파일을 업로드하세요');
     try {
       const res = await fetch(`${API}/admin/excel-to-purchase-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders: parsedCoupangOrders, supplierName: '거래처' })
+        body: JSON.stringify({ orders: parsedUnifiedOrders, supplierName: '통합' })
       });
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `발주서_${new Date().toISOString().slice(0,10)}.xlsx`;
+      a.download = `통합발주서_${new Date().toISOString().slice(0,10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-      toast('발주서 다운로드 완료');
+      toast('통합 발주서 다운로드 완료');
     } catch { toast('다운로드 실패'); }
   };
 }
