@@ -1500,19 +1500,3 @@ function toast(m) { const e=$('toast'); $('toast-msg').textContent=m; e.classLis
 function esc(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
 function copyToClipboard(t) { if (navigator.clipboard) navigator.clipboard.writeText(t).catch(()=>fbCopy(t)); else fbCopy(t); }
 function fbCopy(t) { const a=document.createElement('textarea'); a.value=t; document.body.appendChild(a); a.select(); document.execCommand('copy'); document.body.removeChild(a); }
-
-// ========================================
-//  DEMO(가라) 모드 배너 — 서버가 DEMO일 때만 표시
-// ========================================
-(async function demoBanner() {
-  try {
-    const d = await get('/demo/status');
-    if (!d.demo) return;
-    const bar = document.createElement('div');
-    bar.id = 'demo-banner';
-    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#111827;color:#fbbf24;font-size:12px;text-align:center;padding:5px 12px;font-weight:600;letter-spacing:.2px;box-shadow:0 1px 4px rgba(0,0,0,.25)';
-    bar.innerHTML = '⚡ DEMO 모드 — 실제 결제/발송 없이 가짜 데이터로 동작 중 &nbsp;|&nbsp; 테스트 계정 <b>1234 / 1234</b> (셀러·관리자 공용)';
-    document.body.appendChild(bar);
-    document.body.style.paddingTop = '28px';
-  } catch {}
-})();
