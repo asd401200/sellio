@@ -224,10 +224,35 @@ function bullet(slide, x, y, w, items, opt = {}) {
   ], { fontSize: 14 });
 }
 
-// ============ 10. 기술 스택 ============
+// ============ 10. 기존 솔루션과 비교 ============
 {
   const s = pptx.addSlide();
-  header(s, 10, 'TECH STACK', '기술 스택 & 구현');
+  header(s, 10, 'COMPARISON', '기존 솔루션과의 비교');
+  const head = (t) => ({ text: t, options: { fill: { color: NAVY }, color: WHITE, bold: true, fontSize: 13, align: 'center', valign: 'middle', fontFace: FONT } });
+  const headHi = (t) => ({ text: t, options: { fill: { color: BLUE }, color: WHITE, bold: true, fontSize: 13.5, align: 'center', valign: 'middle', fontFace: FONT } });
+  const cell = (t) => ({ text: t, options: { color: '374151', fontSize: 11.5, align: 'center', valign: 'middle', fontFace: FONT, fill: { color: WHITE } } });
+  const cellHi = (t) => ({ text: t, options: { color: NAVY, fontSize: 11.5, bold: true, align: 'center', valign: 'middle', fontFace: FONT, fill: { color: 'EAF2FE' } } });
+  const label = (t) => ({ text: t, options: { color: NAVY, fontSize: 12, bold: true, align: 'left', valign: 'middle', fontFace: FONT, fill: { color: LIGHT } } });
+  const rows = [
+    [head('비교 항목'), head('수작업 (엑셀)'), head('기존 통합관리 솔루션\n(사방넷·이지어드민·플레이오토 등)'), headHi('Sellio')],
+    [label('주문 수집'), cell('채널별 수동 다운로드'), cell('다채널 자동 수집'), cellHi('쿠팡·네이버 자동 수집')],
+    [label('공급처별 발주서'), cell('직접 분류 · 작성'), cell('부분 지원 / 설정 복잡'), cellHi('공급처별 엑셀 자동 분리 ✓')],
+    [label('송장 등록'), cell('주문별 수동 입력'), cell('일괄 등록 지원'), cellHi('양식 다운로드→업로드 일괄 ✓')],
+    [label('도입 난이도'), cell('낮음 (비효율)'), cell('높음 (전문 설정 필요)'), cellHi('쉽고 가벼움 ✓')],
+    [label('비용'), cell('인건비 · 시간'), cell('월 구독료'), cellHi('경량 자체 구축 ✓')],
+    [label('멀티 셀러 운영'), cell('사실상 불가'), cell('가능'), cellHi('가능 ✓')],
+  ];
+  s.addTable(rows, {
+    x: 0.55, y: 1.45, w: 12.25, colW: [2.0, 2.95, 4.1, 3.2], rowH: [0.62, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    border: { type: 'solid', color: 'E5E7EB', pt: 1 }, align: 'center', valign: 'middle',
+  });
+  s.addText('핵심 차별점 — 공급처별 발주서 자동 분리 + 무거운 설정 없이 바로 쓰는 경량 자동화', { x: 0.55, y: 5.75, w: 12.25, h: 0.5, align: 'center', fontFace: FONT, fontSize: 13.5, bold: true, color: BLUE, fill: { color: LIGHT } });
+}
+
+// ============ 11. 기술 스택 ============
+{
+  const s = pptx.addSlide();
+  header(s, 11, 'TECH STACK', '기술 스택 & 구현');
   const stacks = [
     ['Backend', 'Node.js · Express\nREST API 서버', BLUE],
     ['Frontend', 'HTML · CSS\nVanilla JavaScript (SPA)', '8B5CF6'],
@@ -245,10 +270,10 @@ function bullet(slide, x, y, w, items, opt = {}) {
   });
 }
 
-// ============ 11. 데모 시나리오 ============
+// ============ 12. 데모 시나리오 ============
 {
   const s = pptx.addSlide();
-  header(s, 11, 'DEMO', '데모 시연 시나리오');
+  header(s, 12, 'DEMO', '데모 시연 시나리오');
   const steps = [
     '관리자(1234/1234) 로그인 → 셀러 3명 · 공급처 2곳 확인',
     '통합 발주서 → "주문 불러오기" → 36건 자동 수집',
@@ -266,10 +291,10 @@ function bullet(slide, x, y, w, items, opt = {}) {
   s.addText('테스트 계정 — 셀러/관리자 공용  ID 1234 / PW 1234   (seller2, seller3 도 PW 1234)', { x: 0.7, y: 5.75, w: 12, h: 0.5, align: 'center', fontFace: FONT, fontSize: 13, bold: true, color: NAVY, fill: { color: LIGHT } });
 }
 
-// ============ 12. 기대효과 & 마무리 ============
+// ============ 13. 기대효과 & 마무리 ============
 {
   const s = pptx.addSlide();
-  header(s, 12, 'IMPACT', '기대 효과 & 향후 계획');
+  header(s, 13, 'IMPACT', '기대 효과 & 향후 계획');
   card(s, 0.7, 1.55, 5.85, 3.9, { shadow: true, line: GREEN });
   s.addText('기대 효과', { x: 1.0, y: 1.8, w: 5, h: 0.45, fontFace: FONT, fontSize: 18, bold: true, color: GREEN });
   bullet(s, 1.0, 2.35, 5.3, [
