@@ -292,7 +292,19 @@ async function loadSupReqs() {
 // ========================================
 //  ADMIN
 // ========================================
-function initAdminDash() { $('btn-a-refresh').onclick = loadAdminDash; }
+function initAdminDash() {
+  $('btn-a-refresh').onclick = loadAdminDash;
+  $('btn-a-demo-reset').onclick = async () => {
+    if (!confirm('데모 데이터를 초기화할까요?\n(수집된 발주 주문 · 송장(배송중) 상태가 모두 초기 상태로 되돌아갑니다)')) return;
+    const btn = $('btn-a-demo-reset'); btn.disabled = true; btn.textContent = '초기화 중...';
+    try {
+      const d = await post('/demo/reset', {});
+      toast(d.success ? '데모 초기화 완료' : (d.message || '초기화 실패'));
+      await loadAdminDash();
+    } catch { toast('초기화 실패'); }
+    btn.disabled = false; btn.textContent = '데모 초기화';
+  };
+}
 let allSupReqs = [];
 async function loadAdminDash() {
   try {

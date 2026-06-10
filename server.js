@@ -28,9 +28,10 @@ const F = {
   deposits: 'data/deposits.json',
   orderTracking: 'data/order_tracking.json',
   normalizedOrders: 'data/normalized_orders.json',
+  demoInvoiced: 'data/demo_invoiced.json',
 };
 Object.values(F).forEach(f => {
-  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') || f.includes('normalized') ? '[]' : '{}', 'utf8');
+  if (!fs.existsSync(f)) fs.writeFileSync(f, f.includes('review') || f.includes('supplier') || f.includes('mapping') || f.includes('purchase') || f.includes('normalized') || f.includes('invoiced') ? '[]' : '{}', 'utf8');
 });
 
 const rj = (file, fb) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fb; } };
@@ -38,8 +39,20 @@ const wj = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2),
 const hash = pw => crypto.createHash('sha256').update(pw + 'sellio_2026').digest('hex');
 
 // ===== DEMO(가라) 모드: 실제 API 자격증명 없이 전체 플로우 테스트 =====
-const { DEMO, mockCoupang, mockSheetProducts, DEMO_PRODUCTS, DEMO_SUPPLIERS, DEMO_SELLERS } = require('./demo');
+const { DEMO, mockCoupang, mockSheetProducts, DEMO_PRODUCTS, DEMO_SUPPLIERS, DEMO_SELLERS, setInvoiced } = require('./demo');
 if (DEMO) console.log('\n  ⚡ DEMO 모드 ON — 쿠팡/네이버/솔라피/구글시트가 모두 가짜 데이터로 동작합니다. (끄려면 DEMO_MODE=false)\n');
+
+// 데모: 송장 등록된 주문(orderId)을 기억 → 다음 조회 시 배송중으로 표시
+function loadInvoiced() { let a = rj(F.demoInvoiced, []); if (!Array.isArray(a)) a = []; return a; }
+function markInvoiced(ids) {
+  if (!DEMO || !ids || !ids.length) return;
+  const set = new Set(loadInvoiced().map(String));
+  ids.forEach(id => set.add(String(id)));
+  const arr = [...set];
+  wj(F.demoInvoiced, arr);
+  setInvoiced(arr);
+}
+if (DEMO) setInvoiced(loadInvoiced()); // 서버 시작 시 복원
 
 // ===== Multer =====
 const imgUpload = multer({
@@ -279,10 +292,11 @@ setTimeout(demoSeed, 300);
 // 데모 상태 조회
 app.get('/api/demo/status', (req, res) => res.json({ success: true, demo: DEMO }));
 
-// 데모 데이터 초기화(주문추적/정규화주문/주문 리셋)
+// 데모 데이터 초기화(정규화주문/주문추적/송장상태 리셋 → 주문 전부 원상복구)
 app.post('/api/demo/reset', (req, res) => {
   if (!DEMO) return res.status(400).json({ success: false, message: '데모 모드 아님' });
-  ['normalizedOrders', 'orderTracking', 'wsOrders'].forEach(k => wj(F[k], []));
+  ['normalizedOrders', 'orderTracking', 'wsOrders', 'demoInvoiced'].forEach(k => wj(F[k], []));
+  setInvoiced([]); // 배송중 전환된 주문 원상복구
   demoSeed();
   res.json({ success: true, message: '데모 데이터 초기화 완료' });
 });
@@ -436,6 +450,7 @@ app.post('/api/coupang/invoice-batch', async (req, res) => {
     try { await cpnPut(`/v2/providers/openapi/apis/api/v5/vendors/${vendorId}/ordersheets/${inv.shipmentBoxId}/invoice`, { vendorId, shipmentBoxId: parseInt(inv.shipmentBoxId), invoiceNumber: String(inv.invoiceNumber), deliveryCompanyCode: inv.deliveryCompanyCode || 'CJGLS' }, secretKey, accessKey, vendorId); results.push({ shipmentBoxId: inv.shipmentBoxId, success: true }); }
     catch (e) { results.push({ shipmentBoxId: inv.shipmentBoxId, success: false, message: e.response?.data?.message || e.message }); }
   }
+  markInvoiced(results.filter(r => r.success).map(r => r.shipmentBoxId)); // 데모: 배송중 전환
   const ok = results.filter(r => r.success).length;
   res.json({ success: true, results, summary: { total: invoices.length, success: ok, fail: invoices.length - ok } });
 });
@@ -456,6 +471,7 @@ app.post('/api/admin/invoice-for-seller', async (req, res) => {
       results.push({ shipmentBoxId: inv.shipmentBoxId, success: true });
     } catch (e) { results.push({ shipmentBoxId: inv.shipmentBoxId, success: false, message: e.response?.data?.message || e.message }); }
   }
+  markInvoiced(results.filter(r => r.success).map(r => r.shipmentBoxId)); // 데모: 배송중 전환
   const ok = results.filter(r => r.success).length;
   res.json({ success: true, results, summary: { total: invoices?.length || 0, success: ok, fail: (invoices?.length || 0) - ok } });
 });

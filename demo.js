@@ -49,6 +49,10 @@ const DEMO_BUYERS = [
 // 발송처(셀러 출고지) 기본값
 const SENDER_ADDR = '경기도 이천시 마장면 서이천로 449-19 하루팜물류센터';
 
+// 송장 등록된 주문(orderId) → 배송중 처리용 집합 (server.js가 주입)
+let _invoiced = new Set();
+function setInvoiced(arr) { _invoiced = new Set((arr || []).map(String)); }
+
 // vendorId → 결정적 시드 (셀러마다 다른 주문이 생성되도록)
 function vendorSeed(vid) {
   if (!vid) return 0;
@@ -95,7 +99,10 @@ function ordersByStatus(status, seed = 0) {
   for (let i = 0; i < total; i++) {
     // 짝수는 ACCEPT(결제완료), 홀수는 INSTRUCT(상품준비중)
     const st = i % 2 === 0 ? 'ACCEPT' : 'INSTRUCT';
-    pool.push(makeOrder(i, st, seed));
+    const o = makeOrder(i, st, seed);
+    // 송장 등록된 주문은 배송중으로 전환
+    if (_invoiced.has(String(o.orderId))) o.status = 'DELIVERING';
+    pool.push(o);
   }
   if (!status || status === 'ALL') return pool;
   return pool.filter(o => o.status === status);
@@ -163,4 +170,5 @@ module.exports = {
   mockCoupang,
   mockSheetProducts,
   ordersByStatus,
+  setInvoiced,
 };
