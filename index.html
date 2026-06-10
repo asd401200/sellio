@@ -70,9 +70,6 @@
         <a href="#" class="nav-item" data-page="s-products"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품관리</span></a>
         <a href="#" class="nav-item" data-page="s-deposit"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span>예치금</span></a>
         <a href="#" class="nav-item" data-page="s-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>설정</span></a>
-        <div class="nav-divider"></div>
-        <span class="nav-label">공급처</span>
-        <a href="#" class="nav-item" data-page="s-ws-catalog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg><span>상품 카탈로그</span></a>
       </div>
       <div class="sidebar-footer">
         <div class="user-pill"><div class="user-avatar-circle" id="s-avatar">U</div><div class="user-meta"><span class="user-name" id="s-name">셀러</span><span class="user-sub" id="s-sub">셀러</span></div></div>
@@ -249,23 +246,6 @@
         </div>
       </section>
 
-      <!-- ===== 공급처: 상품 카탈로그 (셀러) ===== -->
-      <section id="page-s-ws-catalog" class="page">
-        <div class="page-top">
-          <div><h1 class="page-title">상품 카탈로그</h1><p class="page-desc">공급처 상품 목록</p></div>
-        </div>
-        <div class="ws-cat-tabs" id="s-ws-cat-tabs">
-          <button class="ws-cat-tab active" data-cat="all">전체보기</button>
-        </div>
-        <div class="ws-toolbar">
-          <div class="search-input-wrap" style="max-width:320px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 14px">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" placeholder="상품 검색..." id="s-ws-search" class="search-input">
-          </div>
-          <span class="badge blue" id="s-ws-total">전체상품수 : 0개</span>
-        </div>
-        <div class="ws-product-grid" id="s-ws-grid"></div>
-      </section>
     </main>
   </div>
 
@@ -278,7 +258,6 @@
         <a href="#" class="nav-item active" data-page="a-dash"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>대시보드</span></a>
         <a href="#" class="nav-item" data-page="a-sellers"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>셀러 관리</span></a>
         <a href="#" class="nav-item" data-page="a-deposits"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg><span>예치금 관리</span></a>
-        <a href="#" class="nav-item" data-page="a-order-tracking"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="1,4 1,10 7,10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg><span>발주 추적</span></a>
         <a href="#" class="nav-item" data-page="a-po"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg><span>통합 발주서</span></a>
         <a href="#" class="nav-item" data-page="a-invoice"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2"/></svg><span>송장 일괄 등록</span></a>
         <a href="#" class="nav-item" data-page="a-settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>설정</span></a>
@@ -352,6 +331,7 @@
       <section id="page-a-invoice" class="page">
         <div class="card">
           <div class="invoice-toolbar">
+            <button class="btn-green" id="btn-a-inv-template"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg> 송장입력 양식 다운로드</button>
             <label class="btn-outline file-btn">송장 엑셀 업로드<input type="file" accept=".xlsx,.xls,.csv" id="a-inv-file" hidden></label>
             <span class="file-name-display" id="a-inv-fname">파일 선택</span>
             <select id="a-inv-courier" class="input-sm"><option value="CJGLS">CJ대한통운</option><option value="HANJIN">한진택배</option><option value="LOTTE">롯데택배</option><option value="LOGEN">로젠택배</option><option value="EPOST">우체국</option></select>
@@ -384,48 +364,6 @@
             <button class="btn-primary" id="btn-a-sol-save">저장</button>
           </div>
           <div class="api-status hidden" id="a-sol-msg"></div>
-        </div>
-      </section>
-
-      <!-- ===== 발주 추적 관리 (관리자) ===== -->
-      <section id="page-a-order-tracking" class="page">
-        <div class="page-top">
-          <div><h1 class="page-title">발주 추적</h1><p class="page-desc">셀러별 공급 상태 관리 및 공급취소 처리</p></div>
-          <button class="btn-primary" id="btn-a-track-refresh"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg> 새로고침</button>
-        </div>
-        <!-- 공급취소 등록 폼 -->
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-header"><h3>공급취소 등록</h3><span style="font-size:13px;color:var(--gray-500)">공급처에서 취소된 주문을 셀러에게 알립니다</span></div>
-          <div style="padding:16px 24px">
-            <div class="form-grid">
-              <div class="field"><label>셀러 선택 <span class="req">*</span></label>
-                <select id="a-track-seller" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)"><option value="">셀러를 선택하세요</option></select></div>
-              <div class="field"><label>쿠팡 주문번호 <span class="req">*</span></label><input type="text" id="a-track-orderid" placeholder="쿠팡 주문번호"></div>
-              <div class="field"><label>상품명</label><input type="text" id="a-track-product" placeholder="상품명 (선택)"></div>
-              <div class="field"><label>취소 사유 <span class="req">*</span></label>
-                <select id="a-track-reason" style="width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font)">
-                  <option value="품절">품절</option><option value="주소지오류">주소지 오류</option><option value="기타">기타</option>
-                </select></div>
-            </div>
-            <button class="btn-danger" id="btn-a-track-cancel" style="margin-top:12px;padding:10px 24px;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer">공급취소 등록</button>
-          </div>
-        </div>
-        <!-- 추적 내역 -->
-        <div class="filter-chips" id="a-track-chips">
-          <button class="chip active" data-s="all">전체</button>
-          <button class="chip" data-s="발주완료" style="color:var(--green)">발주완료</button>
-          <button class="chip" data-s="공급취소" style="color:var(--red)">공급취소</button>
-          <button class="chip" data-s="재발주완료" style="color:var(--blue)">재발주완료</button>
-        </div>
-        <div class="card" style="margin-top:12px">
-          <div class="card-header">
-            <div class="search-input-wrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="주문번호, 셀러, 상품명 검색..." id="a-track-search" class="search-input"></div>
-            <span class="badge blue" id="a-track-count">0건</span>
-          </div>
-          <table class="tbl">
-            <thead><tr><th>셀러</th><th>쿠팡 주문번호</th><th>상품명</th><th>수령인</th><th>공급상태</th><th>취소사유</th><th>처리일시</th><th>관리</th></tr></thead>
-            <tbody id="a-track-body"></tbody>
-          </table>
         </div>
       </section>
 

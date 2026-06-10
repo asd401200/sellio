@@ -86,7 +86,7 @@ async function enterApp() {
     $('app-admin').classList.remove('hidden');
     $('a-name').textContent = currentUser.company || '관리자';
     initAdminNav(); initAdminDash(); initAdminPO(); initAdminInvoice(); initAdminSettings();
-    initAdminDeposits(); initAdminOrderTracking();
+    initAdminDeposits();
     loadAdminDash(); loadSolapiConfig();
   } else {
     $('app-seller').classList.remove('hidden');
@@ -94,7 +94,7 @@ async function enterApp() {
     $('s-avatar').textContent = (currentUser.company || currentUser.loginId || 'U')[0].toUpperCase();
     $('s-sub').textContent = '셀러';
     initSellerNav(); initProducts(); initSettings();
-    initSellerWsCatalog(); initSellerOrders(); initSellerDeposit();
+    initSellerOrders(); initSellerDeposit();
     try {
       const d = await post('/user/load-keys', { userId: currentUser.uid });
       if (d.keys) { localStorage.setItem('sellio_api', JSON.stringify(d.keys)); $('s-vid').value = d.keys.vendorId||''; $('s-ak').value = d.keys.accessKey||''; $('s-sk').value = d.keys.secretKey||''; $('s-sub').textContent = `셀러 #${d.keys.vendorId}`; }
@@ -576,7 +576,19 @@ function initCoupangExcelUpload() {
   };
 }
 
-function initAdminInvoice() { $('a-inv-file').onchange = async e => { const file = e.target.files[0]; if (!file) return; $('a-inv-fname').textContent = file.name; const fd = new FormData(); fd.append('file', file); try { const d = await fetchRaw(`${API}/invoice/parse-excel`, { method: 'POST', body: fd }); if (d.success&&d.data.length) { $('a-inv-result').classList.remove('hidden'); $('a-inv-result').dataset.parsed = JSON.stringify(d.data); $('a-inv-body').innerHTML = d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td>${esc(r.productName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join(''); toast(`${d.data.length}건`); } } catch { toast('파싱 실패'); } e.target.value = ''; };
+async function downloadInvoiceTemplate() {
+  try {
+    const res = await fetch(`${API}/admin/invoice-template`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    if (!res.ok) return toast('양식 생성 실패');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `송장입력양식_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    toast('송장입력 양식 다운로드');
+  } catch { toast('다운로드 실패'); }
+}
+function initAdminInvoice() { $('btn-a-inv-template').onclick = downloadInvoiceTemplate; $('a-inv-file').onchange = async e => { const file = e.target.files[0]; if (!file) return; $('a-inv-fname').textContent = file.name; const fd = new FormData(); fd.append('file', file); try { const d = await fetchRaw(`${API}/invoice/parse-excel`, { method: 'POST', body: fd }); if (d.success&&d.data.length) { $('a-inv-result').classList.remove('hidden'); $('a-inv-result').dataset.parsed = JSON.stringify(d.data); $('a-inv-body').innerHTML = d.data.map(r=>`<tr><td>${esc(r.receiverName||'-')}</td><td><code>${esc(r.orderId||'-')}</code></td><td>${esc(r.productName||'-')}</td><td><code>${esc(r.invoiceNumber||'-')}</code></td><td><span class="badge ${r.invoiceNumber?'green':'orange'}">${r.invoiceNumber?'준비':'없음'}</span></td></tr>`).join(''); toast(`${d.data.length}건`); } } catch { toast('파싱 실패'); } e.target.value = ''; };
   $('btn-a-apply-inv').onclick = async () => { const ps=$('a-inv-result').dataset.parsed; if (!ps) return toast('엑셀 먼저'); const parsed=JSON.parse(ps).filter(r=>r.invoiceNumber&&r.orderId); if (!parsed.length) return toast('송장 없음'); const btn=$('btn-a-apply-inv'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>'; const courier=$('a-inv-courier').value, users=await get('/admin/users'), sellers=(users.users||[]).filter(u=>u.role==='seller'&&u.hasApiKeys); let ts=0,tf=0; for (const s of sellers) { try { const d=await post('/admin/invoice-for-seller',{sellerUid:s.uid,invoices:parsed.map(r=>({shipmentBoxId:r.orderId,invoiceNumber:r.invoiceNumber,deliveryCompanyCode:courier})),deliveryCompanyCode:courier}); if(d.success){ts+=d.summary.success;tf+=d.summary.fail;} } catch{tf+=parsed.length;} } toast(`성공:${ts} 실패:${tf}`); btn.disabled=false; btn.textContent='전체 송장 등록 실행'; }; }
 
 // ========================================
@@ -1071,65 +1083,6 @@ function downloadWsOrderExcel() {
   toast('엑셀 다운로드');
 }
 
-// ========================================
-//  셀러: 공급처 상품 카탈로그 (열람 전용)
-// ========================================
-let sWsProducts = [], sWsCatFilter = 'all';
-
-function initSellerWsCatalog() {
-  $('s-ws-search').oninput = renderSellerWsCatalog;
-  $('s-ws-cat-tabs').onclick = e => {
-    const tab = e.target.closest('.ws-cat-tab'); if (!tab) return;
-    document.querySelectorAll('#s-ws-cat-tabs .ws-cat-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active'); sWsCatFilter = tab.dataset.cat; renderSellerWsCatalog();
-  };
-  loadSellerWsCatalog();
-}
-
-async function loadSellerWsCatalog() {
-  try {
-    const d = await get('/ws/products');
-    if (d.success) { sWsProducts = d.products || []; renderSellerWsCats(); renderSellerWsCatalog(); }
-  } catch {}
-}
-
-function renderSellerWsCats() {
-  const cats = [...new Set(sWsProducts.map(p => p.category).filter(Boolean))];
-  $('s-ws-cat-tabs').innerHTML = '<button class="ws-cat-tab active" data-cat="all">전체보기</button>' +
-    cats.map(c => `<button class="ws-cat-tab" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
-}
-
-function renderSellerWsCatalog() {
-  const q = ($('s-ws-search').value || '').toLowerCase();
-  let f = sWsProducts;
-  if (sWsCatFilter !== 'all') f = f.filter(p => p.category === sWsCatFilter);
-  if (q) f = f.filter(p => (p.name || '').toLowerCase().includes(q));
-  $('s-ws-total').textContent = `전체상품수 : ${f.length}개`;
-
-  const getMinPrice = p => {
-    if (Array.isArray(p.options) && p.options.length) return Math.min(...p.options.map(o => o.price || 0));
-    return p.price || 0;
-  };
-  const getOptsText = p => {
-    if (Array.isArray(p.options) && p.options.length) return p.options.map(o => `${o.name}: ₩${(o.price||0).toLocaleString()}`).join(' / ');
-    return '';
-  };
-
-  $('s-ws-grid').innerHTML = f.length ? f.map(p => `
-    <div class="ws-prod-card">
-      ${p.tax === '비과세' ? '<span class="ws-tax-badge">비과세</span>' : '<span class="ws-tax-badge" style="background:var(--blue)">과세</span>'}
-      ${p.image ? `<img class="ws-prod-img" src="${esc(p.image)}" alt="${esc(p.name)}">` : '<div class="ws-prod-img-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg></div>'}
-      <div class="ws-prod-info">
-        <div class="ws-prod-name">${esc(p.name)}</div>
-        <div class="ws-prod-price">공급가: <strong>₩${getMinPrice(p).toLocaleString()}~</strong></div>
-        <div class="ws-prod-ship" style="font-size:12px;color:var(--gray-500)">${esc(getOptsText(p))}</div>
-        <div class="ws-prod-ship">배송비: <strong>${esc(p.shipping || '수량별배송비')}</strong></div>
-        <div class="ws-prod-ship">${esc(p.delivery || '')}</div>
-        ${p.origin ? `<div class="ws-prod-ship">원산지: ${esc(p.origin)}</div>` : ''}
-      </div>
-    </div>
-  `).join('') : '<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--gray-400)">등록된 상품이 없습니다.</div>';
-}
 
 // ========================================
 //  셀러: 주문 관리 (재발주 시스템 포함)
@@ -1390,103 +1343,6 @@ async function adminDepDeduct(uid) {
     if (d.success) { toast(`차감 완료: ₩${amount.toLocaleString()}`); input.value = ''; loadAdminDeposits(); }
     else toast(d.message || '실패');
   } catch { toast('서버 연결 실패'); }
-}
-
-// ========================================
-//  관리자: 발주 추적 관리
-// ========================================
-let adminTracking = [], adminTrackFilter = 'all';
-
-function initAdminOrderTracking() {
-  $('btn-a-track-refresh').onclick = loadAdminOrderTracking;
-  $('btn-a-track-cancel').onclick = submitAdminCancel;
-  $('a-track-search').oninput = renderAdminTracking;
-  $('a-track-chips').onclick = e => {
-    const c = e.target.closest('.chip'); if (!c) return;
-    document.querySelectorAll('#a-track-chips .chip').forEach(x => x.classList.remove('active'));
-    c.classList.add('active'); adminTrackFilter = c.dataset.s; renderAdminTracking();
-  };
-  loadAdminOrderTracking();
-  loadAdminTrackingSellers();
-}
-
-async function loadAdminTrackingSellers() {
-  try {
-    const d = await post('/auth/users', {});
-    const sellers = (d.users || []).filter(u => u.role === 'seller');
-    $('a-track-seller').innerHTML = '<option value="">셀러를 선택하세요</option>' +
-      sellers.map(u => `<option value="${u.uid}" data-name="${esc(u.company||u.loginId)}">${esc(u.company||u.loginId)} (${esc(u.loginId)})</option>`).join('');
-  } catch {}
-}
-
-async function loadAdminOrderTracking() {
-  try {
-    const d = await get('/admin/order-tracking');
-    if (d.success) { adminTracking = d.tracking || []; renderAdminTracking(); }
-  } catch {}
-}
-
-function renderAdminTracking() {
-  const q = ($('a-track-search')?.value || '').toLowerCase();
-  let f = adminTracking;
-  if (adminTrackFilter !== 'all') f = f.filter(t => t.supplyStatus === adminTrackFilter);
-  if (q) f = f.filter(t => String(t.orderId).includes(q) || (t.sellerName||'').toLowerCase().includes(q) || (t.productName||'').toLowerCase().includes(q));
-  $('a-track-count').textContent = `${f.length}건`;
-
-  const supplyBadge = ss => {
-    if (ss === '발주완료') return `<span class="badge-supply-ok" style="padding:3px 8px;border-radius:12px;font-size:11px">발주완료 ●</span>`;
-    if (ss === '공급취소') return `<span class="badge-supply-cancel" style="padding:3px 8px;border-radius:12px;font-size:11px">공급취소 ●</span>`;
-    if (ss === '재발주완료') return `<span class="badge-supply-reorder" style="padding:3px 8px;border-radius:12px;font-size:11px">재발주완료</span>`;
-    return `<span class="badge-supply-none" style="padding:3px 8px;border-radius:12px;font-size:11px">미발주</span>`;
-  };
-
-  const statusOpts = ['발주완료','공급취소','재발주완료'];
-  $('a-track-body').innerHTML = f.length ? f.map(t => {
-    const rowClass = t.supplyStatus === '공급취소' ? 'supply-cancel' : t.supplyStatus === '발주완료' ? 'supply-ok' : t.supplyStatus === '재발주완료' ? 'supply-reorder' : '';
-    return `<tr class="${rowClass}">
-      <td>${esc(t.sellerName||t.sellerId)}</td>
-      <td><code style="font-size:11px">${esc(t.orderId)}</code></td>
-      <td style="max-width:180px;font-size:13px">${esc(t.productName||'-')}</td>
-      <td>${esc(t.receiverName||'-')}</td>
-      <td>${supplyBadge(t.supplyStatus)}</td>
-      <td style="color:var(--red);font-size:12px">${esc(t.cancelReason||'-')}</td>
-      <td style="font-size:11px">${t.updatedAt?new Date(t.updatedAt).toLocaleDateString('ko'):'-'}</td>
-      <td>
-        <select class="input-sm" style="padding:4px 8px;font-size:11px" onchange="updateAdminTrackStatus('${t.id}',this.value)">
-          ${statusOpts.map(s => `<option value="${s}" ${t.supplyStatus===s?'selected':''}>${s}</option>`).join('')}
-        </select>
-      </td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty"><p>추적 내역이 없습니다</p></td></tr>';
-}
-
-async function submitAdminCancel() {
-  const sellerId = $('a-track-seller').value;
-  const orderId = $('a-track-orderid').value.trim();
-  const cancelReason = $('a-track-reason').value;
-  if (!sellerId) return toast('셀러를 선택하세요');
-  if (!orderId) return toast('쿠팡 주문번호를 입력하세요');
-
-  const sellerOpt = $('a-track-seller').selectedOptions[0];
-  const sellerName = sellerOpt?.dataset?.name || '';
-  try {
-    const d = await post('/order-tracking/cancel', {
-      orderId, sellerId, sellerName, cancelReason,
-      productName: $('a-track-product').value.trim()
-    });
-    if (d.success) {
-      toast(`공급취소 등록: ${orderId}`);
-      $('a-track-orderid').value = ''; $('a-track-product').value = '';
-      loadAdminOrderTracking();
-    } else toast(d.message || '실패');
-  } catch { toast('서버 연결 실패'); }
-}
-
-async function updateAdminTrackStatus(trackId, status) {
-  try {
-    const d = await post('/order-tracking/update-admin-status', { trackId, status });
-    if (d.success) { const t = adminTracking.find(x => x.id === trackId); if (t) { t.supplyStatus = status; } renderAdminTracking(); toast(`상태 변경: ${status}`); }
-  } catch { toast('실패'); }
 }
 
 // ========================================

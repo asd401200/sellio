@@ -504,6 +504,32 @@ app.post('/api/admin/approve-orders-for-seller', async (req, res) => {
   res.json({ success: true, results, summary: { total: shipmentBoxIds?.length || 0, success: ok, fail: (shipmentBoxIds?.length || 0) - ok } });
 });
 
+// ========== 송장입력 양식 엑셀 (정규화 주문 기반, 샘플 송장번호 포함) ==========
+app.post('/api/admin/invoice-template', (req, res) => {
+  let list = rj(F.normalizedOrders, []); if (!Array.isArray(list)) list = [];
+  const { supplierId } = req.body || {};
+  if (supplierId) list = list.filter(o => String(o.supplierId) === String(supplierId));
+  const rows = list.map((o, i) => ({
+    '주문번호': o.orderId || o.shipmentBoxId || '',
+    '수령인': o.receiverName || '',
+    '상품명': o.productName || '',
+    '연락처': o.receiverPhone || '',
+    '택배사': 'CJ대한통운',
+    '송장번호': '6290' + String(100000000 + i), // 데모용 샘플 송장번호
+  }));
+  // 정규화 주문이 없으면 빈 양식 헤더만
+  if (!rows.length) rows.push({ '주문번호': '', '수령인': '', '상품명': '', '연락처': '', '택배사': 'CJ대한통운', '송장번호': '' });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [18, 12, 30, 16, 12, 18].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '송장입력');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const fname = encodeURIComponent(`송장입력양식_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${fname}`);
+  res.send(buf);
+});
+
 // ========== 엑셀 파싱 ==========
 app.post('/api/invoice/parse-excel', excelUpload.single('file'), (req, res) => {
   try {
