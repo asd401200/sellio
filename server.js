@@ -38,7 +38,7 @@ const wj = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2),
 const hash = pw => crypto.createHash('sha256').update(pw + 'sellio_2026').digest('hex');
 
 // ===== DEMO(가라) 모드: 실제 API 자격증명 없이 전체 플로우 테스트 =====
-const { DEMO, mockCoupang, mockSheetProducts, DEMO_PRODUCTS } = require('./demo');
+const { DEMO, mockCoupang, mockSheetProducts, DEMO_PRODUCTS, DEMO_SUPPLIERS, DEMO_SELLERS } = require('./demo');
 if (DEMO) console.log('\n  ⚡ DEMO 모드 ON — 쿠팡/네이버/솔라피/구글시트가 모두 가짜 데이터로 동작합니다. (끄려면 DEMO_MODE=false)\n');
 
 // ===== Multer =====
@@ -156,7 +156,7 @@ function parseSheetProducts(rows) {
 }
 
 async function fetchSheetProducts(sheetUrl) {
-  if (DEMO) return mockSheetProducts(); // 데모: 구글시트 대신 가짜 공급처 상품
+  if (DEMO) return mockSheetProducts(sheetUrl); // 데모: 구글시트 대신 공급처별 가짜 상품
   const idMatch = sheetUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
   const gidMatch = sheetUrl.match(/gid=(\d+)/);
   if (!idMatch) return [];
@@ -185,14 +185,24 @@ async function refreshAllSuppliers() {
   return updated;
 }
 
-// ========== 하루팜 시드 + 서버 시작 시 전체 공급처 업데이트 ==========
+// ========== 공급처 시드 + 서버 시작 시 전체 공급처 업데이트 ==========
 (async function initSuppliers() {
-  // 하루팜 시드 (없으면 생성)
   let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
-  if (!suppliers.find(s => s.name === '하루팜')) {
+  let changed = false;
+  if (DEMO) {
+    // 데모: 두 공급처(하루팜, 늘푸른우리) 시드 → 발주서 공급처별 분리 시연
+    DEMO_SUPPLIERS.forEach((ds, i) => {
+      let s = suppliers.find(x => x.name === ds.name);
+      if (!s) {
+        suppliers.push({ id: Date.now() + i, name: ds.name, sheetUrl: ds.sheetUrl, products: [], contact: ds.contact, phone: ds.phone, email: ds.email, note: ds.note, createdAt: new Date().toISOString() });
+        changed = true;
+      } else if (s.sheetUrl !== ds.sheetUrl) { s.sheetUrl = ds.sheetUrl; changed = true; }
+    });
+  } else if (!suppliers.find(s => s.name === '하루팜')) {
     suppliers.push({ id: Date.now(), name: '하루팜', sheetUrl: 'https://docs.google.com/spreadsheets/d/18tbzUoRTNLa6KkJXUIcNnX2HVhpDxNNSnhdXpsodw1M/edit#gid=0', products: [], contact: 'harumart88@naver.com', phone: '', email: 'harumart88@naver.com', note: '제주 과일 전문', createdAt: new Date().toISOString() });
-    wj(F.suppliers, suppliers);
+    changed = true;
   }
+  if (changed) wj(F.suppliers, suppliers);
   // 서버 시작 시 모든 공급처 업데이트
   await refreshAllSuppliers();
 })();
@@ -203,54 +213,65 @@ setInterval(async () => {
   await refreshAllSuppliers();
 }, 24 * 60 * 60 * 1000);
 
-// ========== DEMO(가라) 시드: 셀러에 가짜 API키 + 매핑 + 예치금 ==========
+// ========== DEMO(가라) 시드: 테스트셀러 3명 + 가짜 API키 + 매핑 + 예치금 ==========
 function demoSeed() {
   if (!DEMO) return;
-  // 1) 시드 셀러에 가짜 쿠팡 API 키 부여 → 즉시 상품/주문 조회 가능
   const users = rj(F.users, {});
-  let sellerUid = Object.keys(users).find(uid => users[uid].loginId === '1234' && users[uid].role === 'seller');
-  if (sellerUid && !users[sellerUid].vendorId) {
-    users[sellerUid].vendorId = 'A00012345';
-    users[sellerUid].accessKey = 'demo-access-key';
-    users[sellerUid].secretKey = 'demo-secret-key';
-    users[sellerUid].naverClientId = 'demo-naver-id';
-    users[sellerUid].naverClientSecret = 'demo-naver-secret';
-    wj(F.users, users);
-    console.log('[데모 시드] 셀러(1234)에 가짜 API 키 등록');
-  }
-  if (!sellerUid) return;
-
-  // 2) 하루팜 공급처 id 확보
   let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
-  const haru = suppliers.find(s => s.name === '하루팜');
-  const supplierId = haru ? haru.id : null;
-
-  // 3) 데모 상품 ↔ 하루팜 매핑 (없을 때만)
   let mappings = rj(F.mappings, []); if (!Array.isArray(mappings)) mappings = [];
-  if (supplierId && !mappings.some(m => m.userId === sellerUid)) {
-    DEMO_PRODUCTS.forEach(p => {
-      mappings.push({
-        id: Date.now() + Math.floor(Math.random() * 1e5),
-        userId: sellerUid, productName: p.sellerProductName, productId: String(p.sellerProductId),
-        optionId: String(p.sellerProductItemId), option: p.itemName, salePrice: p.salePrice,
-        supplierId: String(supplierId), supplierName: '하루팜', supplierOptionKey: p.supplierOption,
-        costPrice: p.cost, active: true, createdAt: new Date().toISOString(),
-      });
-    });
-    wj(F.mappings, mappings);
-    console.log(`[데모 시드] 매핑 ${DEMO_PRODUCTS.length}건 생성 (셀러 상품 → 하루팜)`);
-  }
-
-  // 4) 예치금 초기 잔액
   const dep = rj(F.deposits, { balances: {}, transactions: [] });
   if (!dep.balances) dep.balances = {};
   if (!dep.transactions) dep.transactions = [];
-  if (dep.balances[sellerUid] === undefined) {
-    dep.balances[sellerUid] = 500000;
-    dep.transactions.unshift({ id: Date.now(), userId: sellerUid, type: 'charge', amount: 500000, balance: 500000, description: '데모 초기 충전', createdAt: new Date().toISOString() });
-    wj(F.deposits, dep);
-    console.log('[데모 시드] 예치금 500,000원 충전');
-  }
+  let uChanged = false, mChanged = false, dChanged = false;
+
+  DEMO_SELLERS.forEach((sd, si) => {
+    // 1) 계정 확보 (없으면 생성)
+    let uid = Object.keys(users).find(u => users[u].loginId === sd.loginId && users[u].role === 'seller');
+    if (!uid) {
+      uid = 'u_demo_seller_' + si;
+      users[uid] = {
+        loginId: sd.loginId, passwordHash: hash(sd.password), role: 'seller',
+        company: sd.company, ceo: sd.ceo, mobile: sd.mobile, email: sd.email,
+        createdAt: new Date().toISOString(),
+      };
+      uChanged = true;
+      console.log(`[데모 시드] 셀러 계정 생성: ${sd.loginId}/${sd.password} (${sd.company})`);
+    }
+    // 2) 가짜 API 키 (셀러마다 다른 vendorId → 서로 다른 주문)
+    if (!users[uid].vendorId) {
+      users[uid].vendorId = sd.vendorId;
+      users[uid].accessKey = 'demo-access-' + sd.vendorId;
+      users[uid].secretKey = 'demo-secret-' + sd.vendorId;
+      users[uid].naverClientId = 'demo-naver-' + sd.vendorId;
+      users[uid].naverClientSecret = 'demo-naver-secret';
+      uChanged = true;
+    }
+    // 3) 상품 ↔ 배정 공급처 매핑 (없을 때만) → 발주서 공급처별 분리
+    if (suppliers.length && !mappings.some(m => m.userId === uid)) {
+      DEMO_PRODUCTS.forEach((p, i) => {
+        const sup = suppliers.find(s => s.name === p.supplier);
+        if (!sup) return;
+        mappings.push({
+          id: Date.now() + si * 100 + i,
+          userId: uid, productName: p.sellerProductName, productId: String(p.sellerProductId),
+          optionId: String(p.sellerProductItemId), option: p.itemName, salePrice: p.salePrice,
+          supplierId: String(sup.id), supplierName: sup.name, supplierOptionKey: p.supplierOption,
+          costPrice: p.cost, active: true, createdAt: new Date().toISOString(),
+        });
+      });
+      mChanged = true;
+    }
+    // 4) 예치금 초기 잔액 (셀러마다 다른 금액)
+    if (dep.balances[uid] === undefined) {
+      dep.balances[uid] = sd.deposit;
+      dep.transactions.unshift({ id: Date.now() + si, userId: uid, type: 'charge', amount: sd.deposit, balance: sd.deposit, description: '데모 초기 충전', createdAt: new Date().toISOString() });
+      dChanged = true;
+    }
+  });
+
+  if (uChanged) wj(F.users, users);
+  if (mChanged) { wj(F.mappings, mappings); console.log(`[데모 시드] 매핑 총 ${mappings.length}건 (공급처별 분리)`); }
+  if (dChanged) { wj(F.deposits, dep); console.log(`[데모 시드] 셀러 ${DEMO_SELLERS.length}명 예치금 충전 완료`); }
 }
 // 공급처 시드(하루팜) 이후 실행되도록 약간 지연
 setTimeout(demoSeed, 300);
@@ -883,12 +904,13 @@ app.post('/api/deposits/deduct', (req, res) => {
 
 app.get('/api/admin/deposits', (req, res) => {
   const data = rj(F.deposits, { balances: {}, transactions: [] });
-  const users = rj(F.users, []);
-  const sellers = (Array.isArray(users) ? users : []).filter(u => u.role === 'seller');
-  const summary = sellers.map(u => ({
-    uid: u.uid, loginId: u.loginId, company: u.company || u.loginId,
-    balance: data.balances?.[u.uid] || 0
-  }));
+  const users = rj(F.users, {});
+  const summary = Object.entries(users)
+    .filter(([uid, u]) => u.role === 'seller')
+    .map(([uid, u]) => ({
+      uid, loginId: u.loginId, company: u.company || u.loginId,
+      balance: data.balances?.[uid] || 0
+    }));
   res.json({ success: true, summary, transactions: data.transactions || [] });
 });
 
