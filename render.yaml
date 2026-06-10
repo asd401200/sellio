@@ -2,8 +2,13 @@ services:
   - type: web
     name: sellio
     runtime: node
+    plan: free
     buildCommand: npm install
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
+      # DEMO(가라) 모드: 실제 쿠팡/네이버/솔라피/구글시트 자격증명 없이 MVP 테스트
+      # 실서비스 전환 시 false 로 변경
+      - key: DEMO_MODE
+        value: "true"

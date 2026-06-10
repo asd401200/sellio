@@ -19,8 +19,7 @@ app.use('/uploads', express.static('uploads'));
 // ===== 초기화 =====
 ['uploads', 'data'].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 const F = {
-  users: 'data/users.json', reviews: 'data/review_requests.json',
-  tags: 'data/review_tags.json', config: 'data/config.json',
+  users: 'data/users.json', config: 'data/config.json',
   suppliers: 'data/suppliers.json', mappings: 'data/mappings.json',
   purchaseOrders: 'data/purchase_orders.json',
   supplierRequests: 'data/supplier_requests.json',
@@ -37,6 +36,10 @@ Object.values(F).forEach(f => {
 const rj = (file, fb) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fb; } };
 const wj = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 const hash = pw => crypto.createHash('sha256').update(pw + 'sellio_2026').digest('hex');
+
+// ===== DEMO(가라) 모드: 실제 API 자격증명 없이 전체 플로우 테스트 =====
+const { DEMO, mockCoupang, mockSheetProducts, DEMO_PRODUCTS } = require('./demo');
+if (DEMO) console.log('\n  ⚡ DEMO 모드 ON — 쿠팡/네이버/솔라피/구글시트가 모두 가짜 데이터로 동작합니다. (끄려면 DEMO_MODE=false)\n');
 
 // ===== Multer =====
 const imgUpload = multer({
@@ -55,8 +58,8 @@ function hmac(method, urlPath, sk, ak) {
   return `CEA algorithm=HmacSHA256, access-key=${ak}, signed-date=${dt}, signature=${sig}`;
 }
 const cpnH = (m, u, sk, ak, vid) => ({ Authorization: hmac(m, u, sk, ak), 'Content-Type': 'application/json', 'X-Requested-By': String(vid) });
-const cpnGet = (u, sk, ak, vid) => axios.get(`https://${CPN}${u}`, { headers: cpnH('GET', u, sk, ak, vid), timeout: 15000 });
-const cpnPut = (u, body, sk, ak, vid) => axios.put(`https://${CPN}${u}`, body, { headers: cpnH('PUT', u, sk, ak, vid), timeout: 15000 });
+const cpnGet = (u, sk, ak, vid) => DEMO ? Promise.resolve(mockCoupang('GET', u)) : axios.get(`https://${CPN}${u}`, { headers: cpnH('GET', u, sk, ak, vid), timeout: 15000 });
+const cpnPut = (u, body, sk, ak, vid) => DEMO ? Promise.resolve(mockCoupang('PUT', u)) : axios.put(`https://${CPN}${u}`, body, { headers: cpnH('PUT', u, sk, ak, vid), timeout: 15000 });
 
 // ========== 회원가입 ==========
 app.post('/api/auth/register', (req, res) => {
@@ -153,6 +156,7 @@ function parseSheetProducts(rows) {
 }
 
 async function fetchSheetProducts(sheetUrl) {
+  if (DEMO) return mockSheetProducts(); // 데모: 구글시트 대신 가짜 공급처 상품
   const idMatch = sheetUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
   const gidMatch = sheetUrl.match(/gid=(\d+)/);
   if (!idMatch) return [];
@@ -199,6 +203,69 @@ setInterval(async () => {
   await refreshAllSuppliers();
 }, 24 * 60 * 60 * 1000);
 
+// ========== DEMO(가라) 시드: 셀러에 가짜 API키 + 매핑 + 예치금 ==========
+function demoSeed() {
+  if (!DEMO) return;
+  // 1) 시드 셀러에 가짜 쿠팡 API 키 부여 → 즉시 상품/주문 조회 가능
+  const users = rj(F.users, {});
+  let sellerUid = Object.keys(users).find(uid => users[uid].loginId === '1234' && users[uid].role === 'seller');
+  if (sellerUid && !users[sellerUid].vendorId) {
+    users[sellerUid].vendorId = 'A00012345';
+    users[sellerUid].accessKey = 'demo-access-key';
+    users[sellerUid].secretKey = 'demo-secret-key';
+    users[sellerUid].naverClientId = 'demo-naver-id';
+    users[sellerUid].naverClientSecret = 'demo-naver-secret';
+    wj(F.users, users);
+    console.log('[데모 시드] 셀러(1234)에 가짜 API 키 등록');
+  }
+  if (!sellerUid) return;
+
+  // 2) 하루팜 공급처 id 확보
+  let suppliers = rj(F.suppliers, []); if (!Array.isArray(suppliers)) suppliers = [];
+  const haru = suppliers.find(s => s.name === '하루팜');
+  const supplierId = haru ? haru.id : null;
+
+  // 3) 데모 상품 ↔ 하루팜 매핑 (없을 때만)
+  let mappings = rj(F.mappings, []); if (!Array.isArray(mappings)) mappings = [];
+  if (supplierId && !mappings.some(m => m.userId === sellerUid)) {
+    DEMO_PRODUCTS.forEach(p => {
+      mappings.push({
+        id: Date.now() + Math.floor(Math.random() * 1e5),
+        userId: sellerUid, productName: p.sellerProductName, productId: String(p.sellerProductId),
+        optionId: String(p.sellerProductItemId), option: p.itemName, salePrice: p.salePrice,
+        supplierId: String(supplierId), supplierName: '하루팜', supplierOptionKey: p.supplierOption,
+        costPrice: p.cost, active: true, createdAt: new Date().toISOString(),
+      });
+    });
+    wj(F.mappings, mappings);
+    console.log(`[데모 시드] 매핑 ${DEMO_PRODUCTS.length}건 생성 (셀러 상품 → 하루팜)`);
+  }
+
+  // 4) 예치금 초기 잔액
+  const dep = rj(F.deposits, { balances: {}, transactions: [] });
+  if (!dep.balances) dep.balances = {};
+  if (!dep.transactions) dep.transactions = [];
+  if (dep.balances[sellerUid] === undefined) {
+    dep.balances[sellerUid] = 500000;
+    dep.transactions.unshift({ id: Date.now(), userId: sellerUid, type: 'charge', amount: 500000, balance: 500000, description: '데모 초기 충전', createdAt: new Date().toISOString() });
+    wj(F.deposits, dep);
+    console.log('[데모 시드] 예치금 500,000원 충전');
+  }
+}
+// 공급처 시드(하루팜) 이후 실행되도록 약간 지연
+setTimeout(demoSeed, 300);
+
+// 데모 상태 조회
+app.get('/api/demo/status', (req, res) => res.json({ success: true, demo: DEMO }));
+
+// 데모 데이터 초기화(주문추적/정규화주문/주문 리셋)
+app.post('/api/demo/reset', (req, res) => {
+  if (!DEMO) return res.status(400).json({ success: false, message: '데모 모드 아님' });
+  ['normalizedOrders', 'orderTracking', 'wsOrders'].forEach(k => wj(F[k], []));
+  demoSeed();
+  res.json({ success: true, message: '데모 데이터 초기화 완료' });
+});
+
 // 관리자 수동 업데이트 API
 app.post('/api/admin/refresh-suppliers', async (req, res) => {
   try {
@@ -242,6 +309,7 @@ app.post('/api/user/load-naver-keys', (req, res) => {
 app.post('/api/naver/test', async (req, res) => {
   const { clientId, clientSecret } = req.body;
   if (!clientId || !clientSecret) return res.status(400).json({ success: false, message: '모든 항목 입력' });
+  if (DEMO) return res.json({ success: true }); // 데모: 네이버 OAuth 항상 성공
   try {
     const bcrypt = require('bcryptjs');
     const timestamp = Date.now();
@@ -273,11 +341,6 @@ app.get('/api/admin/users', (req, res) => {
     hasApiKeys: !!(d.vendorId && d.accessKey), createdAt: d.createdAt || '', lastLogin: d.lastLogin || '',
   }));
   res.json({ success: true, users: list, total: list.length });
-});
-
-app.get('/api/admin/all-requests', (req, res) => {
-  let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
-  res.json({ success: true, requests: list, total: list.length });
 });
 
 // ========== 쿠팡 API 프록시 ==========
@@ -435,64 +498,6 @@ app.post('/api/invoice/parse-excel', excelUpload.single('file'), (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
-// ========== 체험단 ==========
-app.post('/api/review/apply', (req, res) => {
-  try {
-    const b = req.body;
-    const rq = {
-      id: Date.now(), userId: b.userId || '', seller: b.seller || '', sellerEmail: b.sellerEmail || '',
-      productName: b.productName || '', keyword: b.keyword || '', productUrl: b.productUrl || '',
-      purchaseOption: b.purchaseOption || '', totalCount: parseInt(b.totalCount) || 0, dailyCount: parseInt(b.dailyCount) || 0,
-      requestTime: b.requestTime || '상관없음', photoReview: b.photoReview === true || b.photoReview === 'true' ? '유' : '무',
-      reviewGuide: b.reviewGuide || 'X', paymentProxy: b.paymentProxy === true || b.paymentProxy === 'true' ? 'Y' : 'N',
-      deliveryProxy: b.deliveryProxy === true || b.deliveryProxy === 'true' ? 'Y' : 'N',
-      weekend: b.weekend === true || b.weekend === 'true' ? 'O' : 'X',
-      productImage: null,
-      status: '대기중', createdAt: new Date().toISOString(),
-    };
-    let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
-    list.unshift(rq); wj(F.reviews, list);
-    res.json({ success: true, request: rq });
-  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
-});
-
-app.get('/api/review/list', (req, res) => {
-  let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
-  if (req.query.userId) list = list.filter(r => r.userId === req.query.userId);
-  res.json({ success: true, requests: list });
-});
-
-app.get('/api/review/export', (req, res) => {
-  let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
-  if (req.query.userId) list = list.filter(r => r.userId === req.query.userId);
-  const pending = list.filter(r => r.status === '대기중');
-  let text = '';
-  pending.forEach((r, i) => {
-    if (i > 0) text += '\n━━━━━━━━━━━━━━━\n\n';
-    text += `[${i + 1}] 체험단 신청\n\n`;
-    text += `1. 구매진행시 검색할 키워드: ${r.keyword}\n2. 총 구매 건수 : ${r.totalCount}\n3. 일 진행 건수 : ${r.dailyCount}\n4. 진행 요청 시간 : ${r.requestTime}\n5. 상품주소 / 상품 이미지 : ${r.productUrl}\n6. 구매옵션 : ${r.purchaseOption || '-'}\n7. 포토제공 유 무 : ${r.photoReview}\n8. 리뷰내용 가이드 : ${r.reviewGuide || 'X'}\n9. 입금대행 Y/N : ${r.paymentProxy}\n10. 택배대행 Y/N: ${r.deliveryProxy}\n11. 주말 진행 여부 : ${r.weekend}\n`;
-    if (r.seller) text += `\n신청자: ${r.seller}`;
-  });
-  if (!text) text = '대기중 없음';
-  res.json({ success: true, text, count: pending.length, requests: pending });
-});
-
-app.post('/api/review/update-status', (req, res) => {
-  const { id, status } = req.body;
-  let list = rj(F.reviews, []); if (!Array.isArray(list)) list = [];
-  const idx = list.findIndex(r => r.id === id);
-  if (idx >= 0) { list[idx].status = status; wj(F.reviews, list); }
-  res.json({ success: true });
-});
-
-// ========== 태그 ==========
-app.post('/api/review/set-tags', (req, res) => {
-  const tags = rj(F.tags, {}); tags[req.body.userId || 'default'] = [...new Set((req.body.orderIds || []).map(String))]; wj(F.tags, tags); res.json({ success: true });
-});
-app.post('/api/review/get-tags', (req, res) => {
-  const tags = rj(F.tags, {}); res.json({ success: true, orderIds: tags[req.body.userId || 'default'] || [] });
-});
-
 // ========== 공급처 ==========
 app.get('/api/suppliers', (req, res) => {
   let list = rj(F.suppliers, []); if (!Array.isArray(list)) list = [];
@@ -647,6 +652,7 @@ app.post('/api/admin/solapi/save-config', (req, res) => {
 app.get('/api/admin/solapi/config', (req, res) => {
   const config = rj(F.config, {});
   const s = config.solapi || {};
+  if (DEMO) return res.json({ success: true, config: { apiKey: '****DEMO', apiSecret: '설정됨(데모)', pfId: s.pfId || 'DEMO_PF', senderNumber: s.senderNumber || '010-0000-0000', configured: true, demo: true } });
   res.json({ success: true, config: { apiKey: s.apiKey ? '****' + s.apiKey.slice(-4) : '', apiSecret: s.apiSecret ? '설정됨' : '', pfId: s.pfId || '', senderNumber: s.senderNumber || '', configured: !!(s.apiKey && s.apiSecret) } });
 });
 
@@ -654,6 +660,7 @@ app.get('/api/admin/solapi/config', (req, res) => {
 app.post('/api/admin/solapi/send', async (req, res) => {
   const { to, text, type } = req.body;
   if (!to || !text) return res.status(400).json({ success: false, message: '수신번호와 메시지 필요' });
+  if (DEMO) { console.log(`[솔라피·데모] 발송됨(가짜): ${to} / ${String(text).slice(0, 30)}...`); return res.json({ success: true, result: { demo: true, groupId: 'DEMO-' + Date.now(), to } }); }
   const config = rj(F.config, {});
   const s = config.solapi;
   if (!s?.apiKey || !s?.apiSecret) return res.status(400).json({ success: false, message: '솔라피 API 설정을 먼저 해주세요' });
@@ -680,7 +687,7 @@ app.post('/api/admin/solapi/send', async (req, res) => {
   } else {
     // LMS (장문) - 80바이트 초과 시 자동 LMS
     msgBody.message.type = text.length > 45 ? 'LMS' : 'SMS';
-    msgBody.message.subject = '체험단 신청 안내';
+    msgBody.message.subject = '알림';
   }
 
   try {
@@ -701,6 +708,7 @@ app.post('/api/admin/solapi/send', async (req, res) => {
 app.post('/api/admin/solapi/send-bulk', async (req, res) => {
   const { recipients, text, type } = req.body;
   if (!recipients?.length || !text) return res.status(400).json({ success: false, message: '수신 목록과 메시지 필요' });
+  if (DEMO) { console.log(`[솔라피·데모] ${recipients.length}건 발송됨(가짜)`); return res.json({ success: true, result: { demo: true, count: recipients.length, groupId: 'DEMO-' + Date.now() } }); }
   const config = rj(F.config, {});
   const s = config.solapi;
   if (!s?.apiKey || !s?.apiSecret || !s.senderNumber) return res.status(400).json({ success: false, message: '솔라피 설정 필요' });
@@ -714,7 +722,7 @@ app.post('/api/admin/solapi/send-bulk', async (req, res) => {
       msg.kakaoOptions = { pfId: s.pfId, disableSms: false };
     } else {
       msg.type = text.length > 45 ? 'LMS' : 'SMS';
-      msg.subject = '체험단 신청 안내';
+      msg.subject = '알림';
     }
     return msg;
   });
